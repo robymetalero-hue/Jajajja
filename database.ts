@@ -292,6 +292,10 @@ try {
   db.exec("ALTER TABLE pending_sales ADD COLUMN paid_amount REAL DEFAULT 0.0");
 } catch (e: any) {}
 
+try {
+  db.exec("ALTER TABLE inventory_counts ADD COLUMN category_filter TEXT DEFAULT NULL");
+} catch (e: any) {}
+
 // Create Cash Accounts & Movements & Settlements tables
 try {
   db.exec(`
@@ -364,7 +368,8 @@ try {
       total_products INTEGER DEFAULT 0,
       reviewed_products INTEGER DEFAULT 0,
       correct_products INTEGER DEFAULT 0,
-      difference_products INTEGER DEFAULT 0
+      difference_products INTEGER DEFAULT 0,
+      category_filter TEXT DEFAULT NULL
     );
   `);
 } catch (e: any) {

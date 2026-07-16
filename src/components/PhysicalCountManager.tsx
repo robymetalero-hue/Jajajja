@@ -64,6 +64,7 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
   }, [products]);
 
   useEffect(() => {
+    fetchProducts();
     fetchActiveSession();
     fetchHistory();
   }, [activeTab]);
@@ -108,12 +109,16 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
       const res = await fetch(`/api/inventory-counts/${countId}`);
       if (res.ok) {
         const data = await res.json();
-        const mapItems = (items: any[]) => items.map(it => ({
-          ...it,
-          system_stock: it.expected_quantity,
-          counted_stock: it.physical_quantity,
-          is_checked: it.status !== 'pendiente' ? 1 : 0
-        }));
+        const mapItems = (items: any[]) => items.map(it => {
+          const prodObj = products?.find(p => p.id === it.product_id);
+          return {
+            ...it,
+            system_stock: it.expected_quantity,
+            counted_stock: it.physical_quantity,
+            product_category: prodObj?.category || 'Sin Categoría',
+            is_checked: it.status !== 'pendiente' ? 1 : 0
+          };
+        });
         if (isHistoric) {
           setHistoricItems(mapItems(data.items || []));
         } else {
@@ -141,10 +146,9 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
       });
 
       if (res.ok) {
-        const newSession = await res.json();
+        await res.json();
         showNotification?.("✓ Nueva sesión de conteo físico iniciada con éxito.", "success");
-        setActiveSession(newSession);
-        fetchSessionItems(newSession.id);
+        await fetchActiveSession();
       } else {
         const err = await res.json();
         showNotification?.(`Error al iniciar sesión: ${err.error}`, "error");

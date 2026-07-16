@@ -230,6 +230,37 @@ async function startServer() {
 
 
   // Helper to enforce permissions on the server
+  const SERVER_DEFAULT_PERMISSIONS: Record<string, boolean> = {
+    create_sales: true,
+    add_to_cart: true,
+    remove_from_cart: true,
+    change_quantities: true,
+    clear_cart: true,
+    apply_discounts: true,
+    select_price_unit: true,
+    select_price_bulk: true,
+    reprint_tickets: true,
+    view_past_sales: true,
+    view_sales: true,
+    view_own_sales_only: true,
+    create_pending_sales: true,
+    edit_pending_sales: true,
+    delete_pending_sales: true,
+    complete_pending_sales: true,
+    manage_credits: true,
+    view_inventory: true,
+    view_stock_available: true,
+    view_sale_prices: true,
+    view_wholesale_prices: true,
+    view_stock_movements: true,
+    physical_control_checklist: true,
+    view_own_cash_accumulated: true,
+    view_own_sales_detail: true,
+    view_own_tickets: true,
+    manage_caja: true,
+    access_ai: true,
+  };
+
   const enforcePermission = (permissionKey: string) => {
     return (req: any, res: any, next: any) => {
       const userRole = req.headers['x-user-role'] || req.query.user_role;
@@ -249,8 +280,12 @@ async function startServer() {
         }
       } catch (err) {}
 
-      // If they have the permission, proceed
-      if (permissions[permissionKey] === true || permissions[permissionKey] === 'true') {
+      // If custom permission is defined, respect it; otherwise, fall back to defaults
+      const isAllowed = permissions[permissionKey] !== undefined 
+        ? (permissions[permissionKey] === true || permissions[permissionKey] === 'true')
+        : SERVER_DEFAULT_PERMISSIONS[permissionKey] === true;
+
+      if (isAllowed) {
         return next();
       }
 
@@ -2720,34 +2755,39 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         }
 
         // --- CAJA ACUMULATIVA DE VENDEDORES (PARTE 4) ---
-        const sellerRow = db.prepare('SELECT username FROM users WHERE id = ?').get(user_id || 1) as any;
+        const activeUserId = Number(req.headers['x-user-id']) || Number(user_id) || 1;
+        const sellerRow = db.prepare('SELECT username FROM users WHERE id = ?').get(activeUserId) as any;
         const sName = sellerRow?.username || 'Cajero';
 
         // Ensure seller's cash account exists
         db.prepare(`
           INSERT OR IGNORE INTO cash_accounts (seller_id, seller_username, current_balance)
           VALUES (?, ?, 0.0)
-        `).run(user_id || 1, sName);
+        `).run(activeUserId, sName);
+
+        // Calculate the actual money received for the cash drawer (only initial abono for credit sales)
+        const receivedAmount = payment_method === 'Crédito' ? Math.min(safeTotal, Math.max(0, Number(initial_abono || 0))) : safeTotal;
+        const receivedAmountInBs = safeCurrency === 'USD' ? (receivedAmount * currentRate) : receivedAmount;
 
         // Record cash movement (pending settlement)
         db.prepare(`
           INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes)
           VALUES (?, ?, 'venta', ?, ?, ?, 'pendiente', ?)
         `).run(
-          user_id || 1,
+          activeUserId,
           saleId,
-          safeTotal,
+          receivedAmount,
           safeCurrency,
           payment_method || 'Efectivo',
           `Venta registrada #${saleId}`
         );
 
-        // Update seller's cash account balance
+        // Update seller's cash account balance (always in BOB/Bs)
         db.prepare(`
           UPDATE cash_accounts
           SET current_balance = current_balance + ?, updated_at = CURRENT_TIMESTAMP
           WHERE seller_id = ?
-        `).run(safeTotal, user_id || 1);
+        `).run(receivedAmountInBs, activeUserId);
 
         let arId: any = null;
         let cpId: any = null;
@@ -4067,23 +4107,29 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   // Crear una nueva sesión de conteo físico (Copia el stock esperado actual)
   app.post("/api/inventory-counts", (req, res) => {
-    const { user_id, username, notes } = req.body;
+    const { user_id, username, notes, category_filter } = req.body;
     try {
       const activeSession = db.prepare("SELECT id FROM inventory_counts WHERE status = 'en_progreso'").get() as any;
       if (activeSession) {
         return res.status(400).json({ error: "Ya existe una sesión de conteo en progreso. Por favor, finalízala o paúsala antes de iniciar otra." });
       }
 
-      const products = db.prepare('SELECT id, name, sku, stock FROM products').all() as any[];
+      let products: any[] = [];
+      if (category_filter && category_filter !== 'Todos') {
+        products = db.prepare('SELECT id, name, sku, stock FROM products WHERE category = ?').all(category_filter) as any[];
+      } else {
+        products = db.prepare('SELECT id, name, sku, stock FROM products').all() as any[];
+      }
+
       if (products.length === 0) {
-        return res.status(400).json({ error: "No hay productos en el catálogo para auditar." });
+        return res.status(400).json({ error: "No hay productos disponibles para auditar." });
       }
 
       const transaction = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO inventory_counts (user_id, username, notes, status, started_at, total_products) 
-          VALUES (?, ?, ?, 'en_progreso', CURRENT_TIMESTAMP, ?)
-        `).run(user_id || 1, username || 'admin', notes || 'Conteo físico', products.length);
+          INSERT INTO inventory_counts (user_id, username, notes, status, started_at, total_products, category_filter) 
+          VALUES (?, ?, ?, 'en_progreso', CURRENT_TIMESTAMP, ?, ?)
+        `).run(user_id || 1, username || 'admin', notes || 'Conteo físico', products.length, category_filter || null);
         
         const countId = result.lastInsertRowid;
         const insertItem = db.prepare(`
@@ -4114,7 +4160,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         return res.status(404).json({ error: "Sesión de conteo no encontrada." });
       }
 
-      const items = db.prepare('SELECT * FROM inventory_count_items WHERE inventory_count_id = ?').all();
+      const items = db.prepare('SELECT * FROM inventory_count_items WHERE inventory_count_id = ?').all(id);
       res.json({ ...count, items });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4175,7 +4221,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
     const { id } = req.params;
     const { status, notes } = req.body;
     try {
-      const allowed = ['pausado', 'finalizado', 'cancelado', 'en_progreso'];
+      const allowed = ['pausado', 'finalizado', 'cancelado', 'en_progreso', 'completado'];
       if (!allowed.includes(status)) {
         return res.status(400).json({ error: "Estado no permitido." });
       }
@@ -4183,7 +4229,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const updateData: any[] = [status];
       let query = "status = ?";
 
-      if (status === 'finalizado') {
+      if (status === 'finalizado' || status === 'completado') {
         query += ", completed_at = CURRENT_TIMESTAMP";
       }
       if (notes !== undefined) {
@@ -4205,7 +4251,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
     const { admin_id, admin_username, notes } = req.body;
     try {
       const count = db.prepare('SELECT status, username FROM inventory_counts WHERE id = ?').get(id) as any;
-      if (!count || count.status !== 'finalizado') {
+      if (!count || (count.status !== 'finalizado' && count.status !== 'completado')) {
         return res.status(400).json({ error: "Solo se pueden aprobar conteos que estén finalizados por el vendedor." });
       }
 
@@ -4327,6 +4373,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.post("/api/cash-accounts/:sellerId/settle", (req, res) => {
     const sellerId = Number(req.params.sellerId);
     const { admin_id, admin_username, delivered_amount, notes } = req.body;
+    
+    // Secure backend check: Only admin, administrador or propietario can settle cash balances
+    const userRole = req.headers['x-user-role'] || req.query.user_role;
+    if (userRole !== 'admin' && userRole !== 'administrador' && userRole !== 'propietario') {
+      return res.status(403).json({ error: "Acceso denegado: Solo el administrador o propietario puede realizar la liquidación y reseteo de caja." });
+    }
+
     try {
       const sellerAcc = db.prepare('SELECT * FROM cash_accounts WHERE seller_id = ?').get(sellerId) as any;
       if (!sellerAcc) {
