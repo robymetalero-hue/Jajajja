@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient resembling Dark Sapphire -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a1226" />
+      <stop offset="100%" stop-color="#050811" />
+    </linearGradient>
+    
+    <!-- Primary Glowing Logo Gradient -->
+    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+
+    <!-- Accent Light Trails Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+
+    <!-- Drop Shadow Filter for depth -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#2563eb" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <!-- Base Solid Square Background (Matches Android Maskable standard) -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Outer tech grid lines for a professional cyber appearance -->
+  <g stroke="#ffffff" stroke-opacity="0.04" stroke-width="1.5">
+    <line x1="128" y1="0" x2="128" y2="512" />
+    <line x1="256" y1="0" x2="256" y2="512" />
+    <line x1="384" y1="0" x2="384" y2="512" />
+    <line x1="0" y1="128" x2="512" y2="128" />
+    <line x1="0" y1="256" x2="512" y2="256" />
+    <line x1="0" y1="384" x2="512" y2="384" />
+  </g>
+
+  <!-- Glowing outer circular orbit ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#logoGrad)" stroke-width="3" stroke-dasharray="12 8" opacity="0.4" />
+
+  <!-- The Core Terminal Base Icon -->
+  <g filter="url(#glow)">
+    <!-- Main glowing Hexagonal Terminal Vector Shield -->
+    <path d="M 256,90 
+             L 390,167 
+             L 390,323 
+             L 256,400 
+             L 122,323 
+             L 122,167 
+             Z" 
+          fill="url(#bgGrad)" 
+          stroke="url(#logoGrad)" 
+          stroke-width="12" 
+          stroke-linejoin="round" />
+
+    <!-- inner tech detail: scanning laser beam -->
+    <line x1="150" y1="256" x2="362" y2="256" stroke="#10b981" stroke-width="4" stroke-linecap="round" opacity="0.8" />
+    
+    <!-- Giant Glowing "G" Monogram connected with Spark Lightning -->
+    <path d="M 315,190 
+             C 290,160 220,160 195,195 
+             C 170,230 170,285 195,317 
+             C 220,350 290,350 315,315 
+             L 315,265
+             L 250,265" 
+          fill="none" 
+          stroke="url(#logoGrad)" 
+          stroke-width="26" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+
+    <!-- Fast Checkout Spark Bolt -->
+    <path d="M 230,120
+             L 290,210
+             L 250,225
+             L 300,315"
+          fill="none"
+          stroke="url(#accentGrad)"
+          stroke-width="8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          opacity="0.9" />
+
+    <!-- Barcode-like visual lines on the side representing POS receipts -->
+    <g fill="url(#logoGrad)">
+      <rect x="220" y="340" width="8" height="22" rx="2" opacity="0.8" />
+      <rect x="234" y="340" width="16" height="22" rx="2" opacity="0.8" />
+      <rect x="256" y="340" width="4" height="22" rx="2" opacity="0.8" />
+      <rect x="266" y="340" width="12" height="22" rx="2" opacity="0.8" />
+      <rect x="284" y="340" width="8" height="22" rx="2" opacity="0.8" />
+    </g>
+  </g>
+</svg>

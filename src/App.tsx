@@ -1,0 +1,1085 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { AppProvider, useAppContext } from './context/AppContext';
+import { hasPermission } from './utils/permissions';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { startAutoBackupScheduler } from "./utils/driveBackupScheduler";
+import POS from './views/POS';
+import LoginScreen from './views/LoginScreen';
+import Dashboard from './views/Dashboard';
+import Inventory from './views/Inventory';
+import PermissionsConsole from './views/PermissionsConsole';
+import ConfiguracionesView from './views/ConfiguracionesView';
+import CajasView from './views/CajasView';
+import CuentasPorCobrarView from './views/CuentasPorCobrarView';
+import DiagnosticoView from './views/DiagnosticoView';
+import AuditoriaView from './views/AuditoriaView';
+import { 
+    InicioView, HistorialVentasView, VentasPendientesView, 
+    DepartamentosView, DevolucionesView, AnalisisView 
+} from './views/ExtraViews';
+import AudioVoice from './components/AudioVoice';
+import { 
+    Menu, X, Home, ShoppingCart, Clock, Receipt, PackageSearch, 
+    Folder, ClipboardCheck, Undo2, LayoutDashboard, TrendingUp, 
+    Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History
+} from 'lucide-react';
+
+// Animated nav bar dynamic icons with custom physical micro-movements
+interface AnimatedMenuIconProps {
+    Icon: any;
+    targetView: string;
+    isActive: boolean;
+}
+
+const AnimatedMenuIcon = ({ Icon, targetView, isActive }: AnimatedMenuIconProps) => {
+    let animate: any = {};
+    let transition: any = { repeat: Infinity, ease: "easeInOut" };
+
+    if (targetView === 'inicio') {
+        // Dynamic home bouncing & pulse
+        animate = { 
+            y: isActive ? [0, -4, 0] : [0, -1.2, 0],
+            scale: isActive ? [1, 1.15, 0.95, 1] : [1, 1.02, 1]
+        };
+        transition = {
+            duration: isActive ? 1.5 : 3,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'pos') {
+        // Shopping cart rolling back and forth
+        animate = { 
+            x: isActive ? [0, 4, -4, 0] : [0, 1, -1, 0],
+            rotate: isActive ? [0, 8, -8, 0] : [0, 2, -2, 0],
+            scale: isActive ? [1, 1.18, 1] : [1, 1]
+        };
+        transition = {
+            duration: isActive ? 1.4 : 3.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'ventas_pendientes') {
+        // Pendulum ticking clock
+        animate = { 
+            rotate: isActive ? [0, -25, 25, 0] : [0, -8, 8, 0],
+            scale: isActive ? [1, 1.12, 1] : [1, 1.01, 1]
+        };
+        transition = {
+            duration: isActive ? 1.2 : 2.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'historial_ventas') {
+        // Receipt paper sliding or squeezing
+        animate = { 
+            y: isActive ? [0, -3.5, 2, 0] : [0, -1, 0.5, 0], 
+            scaleY: isActive ? [1, 0.8, 1.1, 1] : [1, 0.95, 1.02, 1] 
+        };
+        transition = {
+            duration: isActive ? 1.8 : 4,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'cuentas_por_cobrar') {
+        // Arrows shifting
+        animate = { 
+            x: isActive ? [-4, 4, -4] : [-1.5, 1.5, -1.5],
+            scale: isActive ? [1, 1.14, 1] : [1, 1]
+        };
+        transition = {
+            duration: isActive ? 1.6 : 3.8,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'productos') {
+        // Box scale and check
+        animate = { 
+            scale: isActive ? [1, 1.25, 0.9, 1] : [1, 1.04, 1], 
+            rotate: isActive ? [0, 12, -12, 0] : [0, 3, -3, 0] 
+        };
+        transition = {
+            duration: isActive ? 2.2 : 4.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'departamentos') {
+        // Folder tag expand
+        animate = { 
+            scaleX: isActive ? [1, 1.16, 0.92, 1] : [1, 1.03, 1], 
+            scaleY: isActive ? [1, 0.82, 1.1, 1] : [1, 0.96, 1] 
+        };
+        transition = {
+            duration: isActive ? 2 : 4,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'inventario') {
+         // Clipboard checklist pulsation
+         animate = { 
+             y: isActive ? [0, -4, 0] : [0, -1.5, 0],
+             scale: isActive ? [1, 1.2, 0.95, 1] : [1, 1.03, 1]
+         };
+         transition = {
+             duration: isActive ? 1.8 : 3.8,
+             repeat: Infinity,
+             ease: "easeInOut"
+         };
+    } else if (targetView === 'devoluciones') {
+        // Rolling loops of returns
+        animate = { 
+            rotate: isActive ? [0, -60, 20, 0] : [0, -12, 4, 0],
+            scale: isActive ? [1, 1.15, 0.95, 1] : [1, 1]
+        };
+        transition = {
+            duration: isActive ? 1.8 : 3.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'auditoria') {
+        // Turning of history wheel
+        animate = { 
+            rotate: isActive ? [0, 360] : [0, 15, 0],
+            scale: isActive ? [1, 1.15, 0.95, 1] : [1, 1]
+        };
+        transition = {
+            duration: isActive ? 2.5 : 4,
+            repeat: isActive ? Infinity : 0,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'reportes') {
+        // Bento layout modular squeeze
+        animate = { 
+            scale: isActive ? [1, 1.18, 0.92, 1] : [1, 1.02, 1],
+            y: isActive ? [0, -2, 2, 0] : [0, -0.5, 0.5, 0]
+        };
+        transition = {
+            duration: isActive ? 2 : 4,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'analisis') {
+        // Direct trending up bars growing
+        animate = { 
+            scaleY: isActive ? [1, 1.25, 0.85, 1] : [1, 1.06, 0.97, 1],
+            y: isActive ? [0, -3, 0] : [0, -0.8, 0]
+        };
+        transition = {
+            duration: isActive ? 1.5 : 3.2,
+            repeat: Infinity,
+            ease: "easeOut"
+        };
+    } else if (targetView === 'cajas') {
+        // Landmark safe box breath
+        animate = { 
+            scale: isActive ? [1, 1.15, 1] : [1, 1.02, 1],
+            rotate: isActive ? [-6, 6, -6] : [-1.5, 1.5, -1.5]
+        };
+        transition = {
+            duration: isActive ? 2 : 4,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else if (targetView === 'configuraciones') {
+        // Persistent smooth gear-spinning rotation
+        animate = { 
+            rotate: [0, 360] 
+        };
+        transition = {
+            duration: isActive ? 3.5 : 12,
+            repeat: Infinity,
+            ease: "linear"
+        };
+    } else if (targetView === 'usuarios') {
+        // Group of users side-sway
+        animate = { 
+            y: isActive ? [0, -3.5, 0] : [0, -1, 0],
+            x: isActive ? [-2, 2, -2] : [-0.5, 0.5, -0.5]
+        };
+        transition = {
+            duration: isActive ? 1.6 : 3.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+        };
+    } else {
+        animate = { scale: isActive ? [1, 1.15, 1] : [1, 1] };
+        transition = { duration: 3, repeat: Infinity, ease: "easeInOut" };
+    }
+
+    return (
+        <motion.div
+            animate={animate}
+            transition={transition}
+            className={`transition-colors duration-300 flex items-center justify-center shrink-0`}
+        >
+            <Icon size={16} />
+        </motion.div>
+    );
+};
+
+function AppLayout() {
+    const { 
+        darkMode, setDarkMode, user, setUser, view, setView, isOffline, isSyncing, triggerOnlineSync,
+        isAutonomousTesting, setIsAutonomousTesting, autonomousStep, setAutonomousStep, autonomousLogs, setAutonomousLogs,
+        products, pwaPrompt, installPWA, isPwaInstalled
+    } = useAppContext();
+    const lowStockCount = products ? products.filter(p => p.stock <= p.stock_alarm).length : 0;
+    const [localWorkers, setLocalWorkers] = useState<any[]>([]);
+    const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+    const [showDevicesModal, setShowDevicesModal] = useState(false);
+    const [globalNotification, setGlobalNotification] = useState<{message: string; type: "success"|"error"|"warn"} | null>(null);
+
+    useEffect(() => {
+        if (user) {
+            startAutoBackupScheduler("23:55", (msg, type) => {
+                setGlobalNotification({ message: msg, type });
+                setTimeout(() => setGlobalNotification(null), 7000);
+            });
+        }
+    }, [user]);
+
+    // App live update push settings - blocks obsolete clients and clears cache aggressively
+    const CLIENT_VERSION = "2.3.0";
+    const [updateAvailable, setUpdateAvailable] = useState(false);
+    const [showUpdateWarning, setShowUpdateWarning] = useState(false);
+    const [serverVersion, setServerVersion] = useState("");
+    const [releaseNotes, setReleaseNotes] = useState("");
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const checkAppVersion = async () => {
+        try {
+            const res = await fetch('/api/app-version');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.version && data.version !== CLIENT_VERSION) {
+                    setUpdateAvailable(true);
+                    setServerVersion(data.version);
+                    setReleaseNotes(data.release_notes || "");
+                    setShowUpdateWarning(true);
+                }
+            }
+        } catch (err) {
+            console.warn("Error checking app version:", err);
+        }
+    };
+
+    const handleForceUpdate = async () => {
+        setIsRefreshing(true);
+        try {
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                }
+            }
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                for (const key of keys) {
+                    await caches.delete(key);
+                }
+            }
+            sessionStorage.clear();
+            localStorage.clear(); // Safe key wipe to force clean states
+            window.location.reload();
+        } catch (e) {
+            window.location.reload();
+        }
+    };
+
+    useEffect(() => {
+        const handlePushUpdate = (e: any) => {
+            const data = e.detail;
+            if (data && data.version && data.version !== CLIENT_VERSION) {
+                setUpdateAvailable(true);
+                setServerVersion(data.version);
+                setReleaseNotes(data.release_notes || "");
+                setShowUpdateWarning(true);
+            }
+        };
+        window.addEventListener('app-update-pushed', handlePushUpdate);
+        
+        // Active version checks
+        checkAppVersion();
+        const updateInterval = setInterval(checkAppVersion, 30000);
+
+        return () => {
+            window.removeEventListener('app-update-pushed', handlePushUpdate);
+            clearInterval(updateInterval);
+        };
+    }, []);
+
+    const loadWorkers = async () => {
+        try {
+            const res = await fetch('/api/users');
+            if (res.ok) {
+                const data = await res.json();
+                setLocalWorkers(data);
+            }
+        } catch {}
+    };
+
+    useEffect(() => {
+        loadWorkers();
+    }, [view]);
+
+    if (!user || (user.role as string) === 'none' || user.username === 'none') {
+        return <LoginScreen />;
+    }
+
+    const handleUserRoleChange = (roleSelected: string) => {
+        if (roleSelected === 'admin') {
+            const adminValue = {
+                id: 1,
+                username: "roby",
+                role: "admin" as const,
+                permissions: { view_reports: true, edit_prices: true, view_inventory: true, view_sales: true }
+            };
+            setUser(adminValue);
+            localStorage.setItem('user', JSON.stringify(adminValue));
+        } else {
+            const found = localWorkers.find(w => w.username === roleSelected);
+            if (found) {
+                const workerValue = {
+                    id: found.id,
+                    username: found.username,
+                    role: "trabajador" as const,
+                    permissions: found.permissions
+                };
+                setUser(workerValue);
+                localStorage.setItem('user', JSON.stringify(workerValue));
+            } else {
+                const fallbackWorker = {
+                    id: 99,
+                    username: "trabajador_demo",
+                    role: "trabajador" as const,
+                    permissions: { view_reports: false, edit_prices: false, view_inventory: true, view_sales: true }
+                };
+                setUser(fallbackWorker);
+                localStorage.setItem('user', JSON.stringify(fallbackWorker));
+            }
+        }
+    };
+
+    // Helper to render nav items with identical styles
+    const renderNavItem = (targetView: any, label: string, Icon: any, gatePermissionKey?: string) => {
+        const isActive = view === targetView;
+        
+        // Check custom operator credentials
+        if (gatePermissionKey && !hasPermission(user, gatePermissionKey)) {
+            return null;
+        }
+
+        return (
+            <motion.button
+                whileHover={{ scale: 1.02, x: 4 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                    setView(targetView);
+                    setMobileSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3.5 px-4.5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wide cursor-pointer relative overflow-hidden transition-colors duration-205 group ${
+                    isActive 
+                        ? 'text-[#2563eb] dark:text-[#38bdf8]' 
+                        : 'text-slate-600 dark:text-slate-350 hover:text-[#1d4ed8] dark:hover:text-[#38bdf8]'
+                }`}
+            >
+                {/* Elastic physical sliding pill backdrop */}
+                {isActive && (
+                    <motion.div
+                        layoutId="active-nav-indicator"
+                        className="absolute inset-0 bg-[#2563eb]/10 dark:bg-[#1d4ed8]/15 border-l-4 border-[#2563eb]"
+                        transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                    />
+                )}
+                <span className="relative z-10 flex items-center justify-between w-full">
+                    <span className="flex items-center gap-3.5">
+                        <AnimatedMenuIcon Icon={Icon} targetView={targetView} isActive={isActive} />
+                        <span>{label}</span>
+                    </span>
+                    {(targetView === 'inventario' || targetView === 'productos') && user?.role === 'admin' && lowStockCount > 0 && (
+                        <span className="bg-rose-500 text-white font-black text-[9px] px-2 py-0.5 rounded-full animate-pulse tracking-tight shrink-0 shadow-sm relative z-20">
+                            {lowStockCount}
+                        </span>
+                    )}
+                </span>
+            </motion.button>
+        );
+    };
+
+    const sidebarContent = (
+        <div className="flex flex-col justify-between h-full bg-white dark:bg-[#0c111e] h-screen select-none border-r border-slate-200/60 dark:border-slate-850/40">
+            <div>
+                {/* Header logo container */}
+                <div className="p-5 border-b border-slate-100 dark:border-slate-850/60 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/15">
+                            <Sparkles size={16} className="animate-pulse" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="font-sans font-black text-slate-850 dark:text-white text-base tracking-tight leading-none">GTR POS</span>
+                            {isOffline ? (
+                                <span className="text-[9px] font-extrabold text-amber-500/95 dark:text-amber-400 mt-1 uppercase tracking-widest font-mono flex items-center gap-1.5 transition-all duration-300">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                    Modo Local
+                                </span>
+                            ) : isSyncing ? (
+                                <span className="text-[9px] font-extrabold text-indigo-550 dark:text-indigo-400 mt-1 uppercase tracking-widest font-mono flex items-center gap-1.5 transition-all duration-300">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping" />
+                                    Sincronizando...
+                                </span>
+                            ) : (
+                                <span className="text-[9px] font-extrabold text-[#2563eb] mt-1 uppercase tracking-widest font-mono flex items-center gap-1.5 transition-all duration-300">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#2563eb]" />
+                                    Sincronizado
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {hasPermission(user, 'access_ai') && (
+                        <button 
+                            onClick={() => {
+                                window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                            }}
+                            className="w-8 h-8 rounded-full bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-550/15 cursor-pointer hover:scale-105 transition-all duration-200 shadow-sm"
+                            title="Llamar a la IA"
+                        >
+                            <Sparkles size={13} className="text-indigo-500 animate-pulse" />
+                        </button>
+                    )}
+                </div>
+
+                {/* Exquisitely Exposed Theme Switcher */}
+                <div className="px-4.5 py-2 mt-2.5">
+                    <div className="relative flex p-1 bg-slate-100 dark:bg-[#070a10] rounded-2xl border border-slate-200/50 dark:border-slate-800/80 select-none">
+                        <button
+                            type="button"
+                            onClick={() => setDarkMode(false)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                !darkMode ? 'text-[#1e293b]' : 'text-slate-455 hover:text-slate-200'
+                            }`}
+                        >
+                            {!darkMode && (
+                                <motion.div
+                                    layoutId="theme-active-pill"
+                                    className="absolute inset-0 bg-white shadow-sm border border-slate-200/40 rounded-xl"
+                                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                />
+                            )}
+                            <Sun size={12} className="relative z-10 text-amber-500 animate-pulse" />
+                            <span className="relative z-10">Claro</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDarkMode(true)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                darkMode ? 'text-white' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                        >
+                            {darkMode && (
+                                <motion.div
+                                    layoutId="theme-active-pill"
+                                    className="absolute inset-0 bg-[#0c111e] shadow-sm border border-slate-800 rounded-xl"
+                                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                />
+                            )}
+                            <Moon size={12} className="relative z-10 text-blue-400" />
+                            <span className="relative z-10">Oscuro</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Categorized menu groups matching Image 1 */}
+                <div className="flex flex-col gap-5 p-3.5 overflow-y-auto max-h-[75vh]">
+                    
+                    {/* PRINCIPAL SECTION */}
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest px-4.5 mb-1.5 font-mono">Principal</span>
+                        {renderNavItem('inicio', 'Inicio', Home)}
+                        {renderNavItem('pos', 'Punto de Venta', ShoppingCart)}
+                        {renderNavItem('cuentas_por_cobrar', 'Ventas Pendientes / CxC', Clock, 'manage_credits')}
+                        {renderNavItem('historial_ventas', 'Historial Ventas', Receipt, 'view_sales')}
+                    </div>
+
+                    {/* INVENTARIO SECTION */}
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest px-4.5 mb-1.5 font-mono">Inventario</span>
+                        {renderNavItem('productos', 'Productos', PackageSearch, 'view_inventory')}
+                        {renderNavItem('departamentos', 'Departamentos', Folder, 'view_inventory')}
+                        {renderNavItem('inventario', 'Inventario', ClipboardCheck, 'view_inventory')}
+                        {renderNavItem('auditoria', 'Auditoría', History, 'view_inventory')}
+                        {renderNavItem('devoluciones', 'Devoluciones', Undo2, 'view_inventory')}
+                    </div>
+
+                    {/* ADMINISTRACION SECTION */}
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest px-4.5 mb-1.5 font-mono">Administración</span>
+                        {renderNavItem('reportes', 'Reportes', LayoutDashboard, 'view_reports')}
+                        {renderNavItem('analisis', 'Análisis Productos', TrendingUp, 'view_reports')}
+                        {renderNavItem('cajas', 'Cajas & Ingresos', Landmark, 'manage_caja')}
+                        {renderNavItem('configuraciones', 'Configuraciones', Settings)}
+                        {renderNavItem('diagnostico', 'Diagnósticos GTR', Activity)}
+                        {user?.role === 'admin' && renderNavItem('usuarios', 'Usuarios', Users)}
+                    </div>
+                </div>
+            </div>
+
+            {/* User Profile module matching Image 1 */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-850/60 bg-slate-50/50 dark:bg-black/10 flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-550/15">
+                        <span className="font-extrabold text-sm uppercase">{(user?.username || 'R')[0]}</span>
+                    </div>
+                    <div className="flex flex-col min-w-0 flex-1">
+                        <span className="font-black text-slate-805 dark:text-white text-xs truncate leading-none">@{user?.username || 'roby'}</span>
+                        <span className="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/5 dark:text-emerald-400 text-[8px] font-black uppercase px-2 py-0.5 rounded-lg border border-emerald-500/10 w-max mt-1.5 tracking-wider">
+                            Propietario
+                        </span>
+                    </div>
+                    
+                    {/* Fast switcher to toggle roles or profiles of trabajadores smoothly inside UI */}
+                    <div className="flex items-center gap-1 cursor-pointer" title="Cambiar Operario">
+                        <select 
+                            className="bg-transparent text-[10px] text-slate-400 hover:text-slate-600 font-bold focus:outline-none w-6 cursor-pointer"
+                            onChange={e => handleUserRoleChange(e.target.value)}
+                            value={user?.username || "admin"}
+                        >
+                            <option value="admin">Admin</option>
+                            {localWorkers.map(w => (
+                                <option key={w.username} value={w.username}>@{w.username}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Profile actions row */}
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button 
+                        onClick={() => setShowDevicesModal(true)}
+                        className="py-2 border border-slate-205 dark:border-slate-800 rounded-xl text-[10px] font-extrabold uppercase text-slate-605 hover:bg-slate-50 dark:hover:bg-slate-850 transition flex items-center justify-center gap-1.5 cursor-pointer dark:text-slate-350"
+                    >
+                        <Smartphone size={11} />
+                        Dispositivos
+                    </button>
+                    <button 
+                        onClick={async () => {
+                            const confirmClose = window.confirm("¿Seguro que deseas salir del terminal de caja fiscal?");
+                            if (confirmClose) {
+                                await setUser(null);
+                            }
+                        }}
+                        className="py-2 border border-slate-205 dark:border-slate-800 rounded-xl text-[10px] font-extrabold uppercase text-rose-500 hover:bg-rose-500/5 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                        <LogOut size={11} />
+                        Salir
+                    </button>
+                </div>
+
+                {hasPermission(user, 'access_ai') && (
+                    <button 
+                        onClick={() => {
+                            window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                        }}
+                        className="w-full mt-2.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-750 hover:to-indigo-850 text-white border border-indigo-505/20 rounded-xl text-[9.5px] font-extrabold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-indigo-500/10"
+                    >
+                        <Sparkles size={11} className="text-amber-300 animate-pulse" />
+                        Comandos Rápidos IA
+                    </button>
+                )}
+
+                {/* Visual Status Indicator Footer */}
+                <div className="flex justify-between items-center border-t border-slate-100 dark:border-slate-800/40 pt-2 text-[10px] text-[#94a3b8] font-bold">
+                    <span>Sistema Autorizado</span>
+                    <span className="text-[9px] font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                        v2.0 Premium
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+
+    return (
+        <div className={`flex h-screen w-full select-none ${darkMode ? 'dark bg-[#070a10] text-[#cacfd2]' : 'bg-neutral-50/40 text-slate-900'}`}>
+            
+            {/* Desktop persistent sidebar drawer */}
+            <div className="hidden lg:block lg:w-[260px] h-full shrink-0">
+                {sidebarContent}
+            </div>
+
+            {/* Mobile Animated Dropdown Menu Panel (displayed downwards nicely) */}
+            <AnimatePresence>
+                {mobileSidebarOpen && (
+                    <>
+                        {/* Backdrop fade overlay */}
+                        <motion.div 
+                            key="backdrop"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18 }}
+                            className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-40 lg:hidden"
+                            onClick={() => setMobileSidebarOpen(false)}
+                        />
+                        
+                        {/* Dropdown panel sliding downwards nicely starting from the top header */}
+                        <motion.div 
+                            key="dropdown-panel"
+                            initial={{ opacity: 0, y: -40, height: 0 }}
+                            animate={{ opacity: 1, y: 0, height: "auto" }}
+                            exit={{ opacity: 0, y: -40, height: 0 }}
+                            transition={{ type: "spring", stiffness: 350, damping: 28 }}
+                            className="fixed top-14 left-0 right-0 z-40 bg-white dark:bg-[#0c111e]/98 border-b border-slate-200 dark:border-slate-850/90 shadow-2xl overflow-hidden lg:hidden"
+                        >
+                            <motion.div 
+                                initial="hidden"
+                                animate="visible"
+                                variants={{
+                                    hidden: { opacity: 0 },
+                                    visible: {
+                                        opacity: 1,
+                                        transition: {
+                                            staggerChildren: 0.035
+                                        }
+                                    }
+                                }}
+                                className="p-4 flex flex-col gap-4 max-h-[82vh] overflow-y-auto"
+                            >
+                                {/* PRINCIPAL SECTION */}
+                                <motion.div 
+                                    variants={{
+                                        hidden: { opacity: 0, y: -8 },
+                                        visible: { opacity: 1, y: 0 }
+                                    }}
+                                    className="flex flex-col gap-1"
+                                >
+                                    <span className="text-[9px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-4.5 mb-1.5 font-mono">Principal</span>
+                                    {renderNavItem('inicio', 'Inicio', Home)}
+                                    {renderNavItem('pos', 'Punto de Venta', ShoppingCart)}
+                                    {renderNavItem('cuentas_por_cobrar', 'Ventas Pendientes / CxC', Clock, 'manage_credits')}
+                                    {renderNavItem('historial_ventas', 'Historial Ventas', Receipt)}
+                                </motion.div>
+
+                                {/* INVENTARIO SECTION */}
+                                <motion.div 
+                                    variants={{
+                                        hidden: { opacity: 0, y: -8 },
+                                        visible: { opacity: 1, y: 0 }
+                                    }}
+                                    className="flex flex-col gap-1"
+                                >
+                                    <span className="text-[9px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-4.5 mb-1.5 font-mono">Inventario</span>
+                                    {renderNavItem('productos', 'Productos', PackageSearch, 'view_inventory')}
+                                    {renderNavItem('departamentos', 'Departamentos', Folder, 'view_inventory')}
+                                    {renderNavItem('inventario', 'Inventario', ClipboardCheck, 'view_inventory')}
+                                    {renderNavItem('auditoria', 'Auditoría', History, 'view_inventory')}
+                                    {renderNavItem('devoluciones', 'Devoluciones', Undo2, 'view_inventory')}
+                                </motion.div>
+
+                                {/* ADMINISTRACION SECTION */}
+                                <motion.div 
+                                    variants={{
+                                        hidden: { opacity: 0, y: -8 },
+                                        visible: { opacity: 1, y: 0 }
+                                    }}
+                                    className="flex flex-col gap-1"
+                                >
+                                    <span className="text-[9px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-4.5 mb-1.5 font-mono">Administración</span>
+                                    {renderNavItem('reportes', 'Reportes', LayoutDashboard, 'view_reports')}
+                                    {renderNavItem('analisis', 'Análisis Productos', TrendingUp, 'view_reports')}
+                                    {renderNavItem('cajas', 'Cajas & Ingresos', Landmark, 'manage_caja')}
+                                    {renderNavItem('configuraciones', 'Configuraciones', Settings)}
+                                    {user?.role === 'admin' && renderNavItem('usuarios', 'Usuarios', Users)}
+                                </motion.div>
+
+                                {/* Profile interactive box closely integrated within the mobile dropdown */}
+                                <motion.div 
+                                    variants={{
+                                        hidden: { opacity: 0, y: -8 },
+                                        visible: { opacity: 1, y: 0 }
+                                    }}
+                                    className="p-3.5 border-t border-slate-100 dark:border-slate-850/60 bg-slate-50/50 dark:bg-black/15 rounded-2xl flex flex-col gap-3 mt-1"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-550/15">
+                                                <span className="font-extrabold text-xs uppercase">{(user?.username || 'R')[0]}</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="font-black text-slate-805 dark:text-white text-xs">@{user?.username || 'roby'}</span>
+                                                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Operario Activo</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <select 
+                                            className="bg-transparent text-[10px] text-slate-400 hover:text-slate-600 font-bold focus:outline-none cursor-pointer"
+                                            onChange={e => handleUserRoleChange(e.target.value)}
+                                            value={user?.username || "admin"}
+                                        >
+                                            <option value="admin">Admin</option>
+                                            {localWorkers.map(w => (
+                                                <option key={w.username} value={w.username}>@{w.username}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-2 text-[9px]">
+                                        <button 
+                                            onClick={() => {
+                                                setShowDevicesModal(true);
+                                                setMobileSidebarOpen(false);
+                                            }}
+                                            className="py-2.5 border border-slate-205 dark:border-slate-800 rounded-xl font-bold uppercase text-slate-650 hover:bg-slate-50 dark:hover:bg-slate-850 transition flex items-center justify-center gap-1.5 cursor-pointer dark:text-slate-350"
+                                        >
+                                            <Smartphone size={10} />
+                                            Dispositivos
+                                        </button>
+                                        <button 
+                                            onClick={async () => {
+                                                const confirmClose = window.confirm("¿Seguro que deseas salir del terminal de caja fiscal?");
+                                                if (confirmClose) {
+                                                    await setUser(null);
+                                                }
+                                            }}
+                                            className="py-2.5 border border-slate-205 dark:border-slate-800 rounded-xl font-bold uppercase text-rose-500 hover:bg-rose-500/5 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                        >
+                                            <LogOut size={10} />
+                                            Salir
+                                        </button>
+                                    </div>
+
+                                    {hasPermission(user, 'access_ai') && (
+                                        <button 
+                                            onClick={() => {
+                                                setMobileSidebarOpen(false);
+                                                window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                                            }}
+                                            className="w-full mt-2 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-850 text-white border border-indigo-505/20 rounded-xl text-[9.5px] font-extrabold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-indigo-505/10"
+                                        >
+                                            <Sparkles size={11} className="text-amber-300 animate-pulse" />
+                                            Comandos Rápidos IA
+                                        </button>
+                                    )}
+                                </motion.div>
+                            </motion.div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+
+            {/* Main body wrapper */}
+            <div className="flex-grow flex flex-col h-full overflow-hidden relative">
+                
+                {/* Real-time Firestore Sync Fine Progress Bar */}
+                {isSyncing && (
+                    <div className="absolute top-14 lg:top-0 left-0 right-0 h-0.5 bg-indigo-100 dark:bg-indigo-950/20 overflow-hidden z-50">
+                        <motion.div 
+                            className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600"
+                            initial={{ width: "0%" }}
+                            animate={{ 
+                                width: ["0%", "30%", "70%", "95%"],
+                                transition: {
+                                    duration: 1.5,
+                                    times: [0, 0.2, 0.6, 1],
+                                    repeat: Infinity,
+                                    repeatType: "reverse"
+                                }
+                            }}
+                        />
+                    </div>
+                )}
+
+                {/* Mobile Top bar header */}
+                <header className="lg:hidden h-14 bg-white dark:bg-[#0c111e] border-b border-slate-200/60 dark:border-slate-850/40 px-4 flex items-center justify-between shrink-0 select-none z-[50] relative">
+                    <button 
+                        onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+                        className="p-2 text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-xl cursor-pointer transition-colors duration-150 relative z-[60]"
+                    >
+                        <motion.div
+                            animate={{ rotate: mobileSidebarOpen ? 90 : 0 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            {mobileSidebarOpen ? <X size={18} /> : <Menu size={18} />}
+                        </motion.div>
+                    </button>
+                    
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-6 rounded-lg bg-indigo-650 flex items-center justify-center text-white">
+                            <Sparkles size={11} />
+                        </div>
+                        <span className="font-sans font-black text-slate-850 dark:text-white text-sm tracking-tight leading-none uppercase">GTR POS</span>
+                        {isOffline ? (
+                            <span className="text-[8px] font-extrabold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-md uppercase tracking-wider font-mono">
+                                Local
+                            </span>
+                        ) : isSyncing ? (
+                            <span className="text-[8px] font-extrabold text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded-md uppercase tracking-wider font-mono animate-pulse">
+                                Sincronizando...
+                            </span>
+                        ) : (
+                            <span className="text-[8px] font-extrabold text-[#2563eb] bg-[#2563eb]/10 px-1.5 py-0.5 rounded-md uppercase tracking-wider font-mono">
+                                Online
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                        {hasPermission(user, 'access_ai') && (
+                            <button 
+                                onClick={() => {
+                                    window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                                }}
+                                className="w-9 h-9 rounded-full bg-slate-50 dark:bg-[#070b13] border dark:border-slate-800/80 flex items-center justify-center text-indigo-600 dark:text-indigo-400 cursor-pointer hover:scale-105 transition-all shadow-sm"
+                                title="Llamar a la IA"
+                            >
+                                <Sparkles size={13} className="text-indigo-500 animate-pulse" />
+                            </button>
+                        )}
+                        <button 
+                            onClick={() => setDarkMode(!darkMode)}
+                            className="p-2 bg-slate-50 dark:bg-[#070b13] border dark:border-slate-800/80 rounded-xl text-slate-650 dark:text-slate-300 cursor-pointer"
+                        >
+                            {darkMode ? <Sun size={14} className="text-yellow-400" /> : <Moon size={14} />}
+                        </button>
+                    </div>
+                </header>
+
+                {/* Main page view content display */}
+                <main className="flex-grow flex-1 overflow-hidden relative">
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={view}
+                            initial={{ opacity: 0, y: 28 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -18 }}
+                            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }} // Elegant, fluid Apple-style spring ease-out
+                            className="h-full w-full overflow-hidden"
+                        >
+                            {view === 'inicio' && <InicioView />}
+                            {view === 'pos' && <POS />}
+                            {view === 'ventas_pendientes' && hasPermission(user, 'manage_credits') && <CuentasPorCobrarView />}
+                            {view === 'historial_ventas' && hasPermission(user, 'view_sales') && <HistorialVentasView />}
+                            {view === 'cuentas_por_cobrar' && hasPermission(user, 'manage_credits') && <CuentasPorCobrarView />}
+                            {(view === 'productos' || view === 'inventario') && hasPermission(user, 'view_inventory') && <Inventory />}
+                            {view === 'auditoria' && hasPermission(user, 'view_inventory') && <AuditoriaView />}
+                            {view === 'departamentos' && hasPermission(user, 'view_inventory') && <DepartamentosView />}
+                            {view === 'devoluciones' && hasPermission(user, 'view_inventory') && <DevolucionesView />}
+                            {view === 'reportes' && hasPermission(user, 'view_reports') && <Dashboard />}
+                            {view === 'analisis' && hasPermission(user, 'view_reports') && <AnalisisView />}
+                            {view === 'usuarios' && user?.role === 'admin' && <PermissionsConsole />}
+                            {view === 'cajas' && hasPermission(user, 'manage_caja') && <CajasView />}
+                            {view === 'configuraciones' && <ConfiguracionesView />}
+                            {view === 'diagnostico' && <DiagnosticoView />}
+                        </motion.div>
+                    </AnimatePresence>
+                </main>
+            </div>
+
+            {/* Devices telemetry popup modal */}
+            {showDevicesModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-xs" onClick={() => setShowDevicesModal(false)}></div>
+                    <div className="bg-white dark:bg-[#0c111e] rounded-3xl border border-slate-205 dark:border-slate-850 p-6 max-w-sm w-full relative z-10 flex flex-col gap-4 shadow-xl select-none">
+                        <div className="flex items-center gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-850/60 text-indigo-500">
+                            <Smartphone size={16} />
+                            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-850 dark:text-white">Dispositivos Vinculados</h3>
+                        </div>
+                        <p className="text-[10.5px] font-semibold text-slate-400 leading-normal">
+                            Tu licencia premium activa de **GTR POS v2.0** permite conectar terminales móviles ilimitados (smartphones o tabletas) para la toma de comandas móviles en salón.
+                        </p>
+                        
+                        <div className="flex flex-col gap-2 border border-slate-100 dark:border-slate-850 p-2.5 rounded-2xl bg-slate-50/50 dark:bg-black/25">
+                            <div className="flex items-center justify-between text-[11px] font-bold p-2 bg-white dark:bg-black/10 border border-slate-100 rounded-xl">
+                                <span className="text-slate-800 dark:text-slate-200">Balanza de Caja RS-232</span>
+                                <span className="text-emerald-500 text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 rounded-lg">ONLINE</span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] font-bold p-2 bg-white dark:bg-black/10 border border-slate-100 rounded-xl">
+                                <span className="text-slate-800 dark:text-slate-200">Impresora Fiscal Térmica</span>
+                                <span className="text-emerald-500 text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 rounded-lg">ONLINE</span>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => setShowDevicesModal(false)}
+                            className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold rounded-xl uppercase transition cursor-pointer dark:bg-slate-900 dark:text-slate-350"
+                        >
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Elegant Mandatory App Update Locking Modal Overlay */}
+            <AnimatePresence>
+                {showUpdateWarning && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md select-none"
+                    >
+                        <motion.div 
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            className="bg-white dark:bg-[#0c111e] rounded-3xl border border-orange-500/30 p-6 max-w-md w-full relative z-10 flex flex-col gap-5 shadow-2xl"
+                        >
+                            <div className="flex flex-col items-center gap-3.5 text-center">
+                                <div className="w-16 h-16 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500 border border-orange-500/20 shadow-lg shadow-orange-550/10 animate-bounce">
+                                    <Smartphone size={32} />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-orange-500 font-mono">Actualización Obligatoria</span>
+                                    <h2 className="font-sans font-black text-slate-855 dark:text-white text-lg tracking-tight leading-snug">
+                                        ¡Nueva Versión de GTR POS Disponible!
+                                    </h2>
+                                </div>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-orange-500/5 dark:bg-orange-500/10 border border-orange-500/10 text-center">
+                                <p className="text-[11.5px] font-semibold text-slate-600 dark:text-slate-300 leading-relaxed">
+                                    Se ha detectado la versión <strong className="text-orange-550 dark:text-orange-400 font-black">v{serverVersion || "2.3.0"}</strong> en el servidor. Tu dispositivo actual posee una versión anterior y ha sido pausado para evitar cualquier desincronización en tus importes, inventarios y ventas fiscales.
+                                </p>
+                            </div>
+
+                            {releaseNotes && (
+                                <div className="flex flex-col gap-1.5 border border-slate-150 dark:border-slate-800 p-3 rounded-2xl bg-slate-50/50 dark:bg-black/25">
+                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 font-mono">Notas de actualización:</span>
+                                    <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400 italic">
+                                        "{releaseNotes}"
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="flex flex-col gap-2.5">
+                                <motion.button
+                                    disabled={isRefreshing}
+                                    whileHover={{ scale: isRefreshing ? 1 : 1.02 }}
+                                    whileTap={{ scale: isRefreshing ? 1 : 0.98 }}
+                                    onClick={handleForceUpdate}
+                                    className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-xs font-black rounded-2xl uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2"
+                                >
+                                    {isRefreshing ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/35 border-t-white rounded-full animate-spin" />
+                                            <span>Actualizando Aplicación...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles size={14} className="text-white animate-pulse" />
+                                            <span>Actualizar Ahora (Forzar)</span>
+                                        </>
+                                    )}
+                                </motion.button>
+                                <p className="text-[9px] font-bold text-center text-slate-400">
+                                    Al presionar se limpiará la caché local y se cargará el terminal limpio instantáneamente.
+                                </p>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* S.I.T.A. Autonomous AI Test & Healing Pilot HUD */}
+            <AnimatePresence>
+                {isAutonomousTesting && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 30, scale: 0.95 }}
+                        className="fixed bottom-6 left-6 right-6 md:left-auto md:right-6 md:w-[420px] bg-slate-950/95 backdrop-blur-xl border border-indigo-500/35 rounded-3xl p-5 shadow-2xl z-50 text-white flex flex-col gap-3"
+                        id="autonomous-hud"
+                    >
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <span className="flex h-2.5 w-2.5">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75 animate-[ping_1.5s_linear_infinite]"></span>
+                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
+                                    </span>
+                                </div>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Piloto Autónomo QA Integrado</span>
+                            </div>
+                            <span className="text-[11px] font-mono text-slate-400 font-bold">
+                                Paso {autonomousStep + 1} de 5 ({Math.round(((autonomousStep + 1) / 5) * 100)}%)
+                            </span>
+                        </div>
+
+                        <div className="space-y-1">
+                            <h4 className="text-xs font-black uppercase text-indigo-150 flex items-center gap-1.5 leading-none">
+                                <span className="text-indigo-400 animate-pulse text-[8px]">●</span>
+                                {autonomousStep === 0 && "Inicializando Heurística S.I.T.A."}
+                                {autonomousStep === 1 && "Verificando Latencia y Red de APIs"}
+                                {autonomousStep === 2 && "Validando Vistas Principales (DOM Rendering)"}
+                                {autonomousStep === 3 && "Corriendo Simulador de Redondeo Absoluto"}
+                                {autonomousStep === 4 && "Generando Reporte y Propuesta GTR"}
+                                {autonomousStep === 5 && "Auditoría de Integridad Completada"}
+                            </h4>
+                            <p className="text-[10px] text-slate-350 leading-relaxed font-normal">
+                                {autonomousStep === 0 && "Estableciendo conexión en cola... Sincronizando el compilador estático local contra el entorno de pruebas."}
+                                {autonomousStep === 1 && "Disparando pings REST asíncronos a productos, cuentas, configuraciones y almacenamiento SQLite."}
+                                {autonomousStep === 2 && "Ejecutando recorrido visual. Conduciendo el navegador de forma remota por el terminal de ventas, inventario y dashboards."}
+                                {autonomousStep === 3 && "Realizando 100 cálculos en paralelo simulando tasas bolivianas y redondeo sin residuo decimal."}
+                                {autonomousStep === 4 && "Compilando descubrimientos. Invocando auditoría Gemini AI para generar soluciones."}
+                                {autonomousStep === 5 && "Secuencia exitosa. Retornando al terminal de diagnóstico con soluciones en disco."}
+                            </p>
+                        </div>
+
+                        {/* Interactive live log terminal inside the HUD */}
+                        <div className="bg-black/40 border border-white/5 rounded-xl p-3 h-24 overflow-y-auto font-mono text-[9px] text-emerald-400 leading-normal space-y-1">
+                            {autonomousLogs.slice(-6).map((log, index) => (
+                                <div key={index} className="truncate select-all cursor-text text-start">
+                                    {log}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* HUD Footer progress line */}
+                        <div className="space-y-2">
+                            <div className="relative w-full bg-white/10 rounded-full h-1 overflow-hidden">
+                                <motion.div 
+                                    className="bg-indigo-500 h-1 rounded-full absolute left-0 top-0 bottom-0"
+                                    animate={{ width: `${((autonomousStep + 1) / 5) * 100}%` }}
+                                    transition={{ duration: 0.3 }}
+                                />
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        setIsAutonomousTesting(false);
+                                        setAutonomousStep(0);
+                                        setAutonomousLogs(prev => [...prev, "[!] Secuencia interrumpida manualmente por el operador."]);
+                                        setView('diagnostico');
+                                    }}
+                                    className="w-full py-1.5 bg-white/10 hover:bg-white/15 rounded-lg text-[9px] font-bold uppercase tracking-wider text-slate-300 transition cursor-pointer"
+                                >
+                                    Detener Secuencia
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {globalNotification && (
+                <div className={`fixed bottom-6 right-6 p-4 rounded-xl shadow-2xl z-50 flex items-center gap-3 text-white max-w-sm animate-in slide-in-from-bottom-5 ${globalNotification.type === "success" ? "bg-emerald-600" : globalNotification.type === "warn" ? "bg-amber-500" : "bg-rose-600"}`}>
+                    <div className="flex-1 font-bold text-sm">
+                        {globalNotification.message}
+                    </div>
+                </div>
+            )}
+
+            {/* AI Voice modality interactive assistant */}
+            <AudioVoice />
+        </div>
+    );
+}
+
+export default function App() {
+    return (
+        <ErrorBoundary>
+            <AppProvider>
+                <AppLayout />
+            </AppProvider>
+        </ErrorBoundary>
+    );
+}
