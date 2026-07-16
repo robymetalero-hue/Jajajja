@@ -6,7 +6,7 @@ import {
     ShoppingCart, Plus, Minus, Trash2, Printer, Search, UserCheck, 
     AlertTriangle, CreditCard, DollarSign, Camera, X, ClipboardCheck,
     Coins, HelpCircle, ChevronRight, ChevronDown, ShoppingBag, Grid, List, LayoutGrid,
-    CheckCircle2, ArrowLeftRight, QrCode, History, Eye, Star, FileText, Sparkles, Download, Check, Clock, Truck
+    CheckCircle2, ArrowLeftRight, QrCode, History, Eye, Star, FileText, Sparkles, Download, Check, Clock, Truck, Lock
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
@@ -37,7 +37,7 @@ const triggerVibrate = (pattern: number | number[] = 40) => {
 export default function POS() {
     const { 
         products, fetchProducts, cart, addToCart: rawAddToCart, updateCartItemQuantity: rawUpdateCartItemQuantity, 
-        removeFromCart, clearCart, updateCartItemPrice, user, exchangeRate, 
+        removeFromCart, clearCart, updateCartItemPrice, user, kioskMode, exchangeRate, 
         roundBs, receiptTemplate, clients, fetchClients,
         tabs, setTabs, activeTabId, setActiveTabId,
         clientName, setClientName, clientPhone, setClientPhone,
@@ -46,6 +46,8 @@ export default function POS() {
     } = useAppContext();
 
     const executeCheckoutRef = useRef<any>(null);
+    const isKioskLocked = (kioskMode || (user && user.role === 'vendedor')) && user?.role !== 'admin' && user?.role !== 'propietario';
+
 
     const catalogScroll = useElasticScroll(true);
     const cartScroll = useElasticScroll(true);
@@ -1747,7 +1749,7 @@ export default function POS() {
                     style={cartScroll.style}
                     {...cartScroll.touchHandlers}
                 >
-                    <AnimatePresence initial={false} mode="popLayout">
+                    <AnimatePresence initial={false} >
                         {cart.map(item => {
                             const isCustom = item.price_type === 'custom';
                             const activePriceBs = getCartItemPriceBs(item);
@@ -2398,7 +2400,7 @@ export default function POS() {
                             : "flex flex-col gap-1.5"
                     }
                 >
-                    <AnimatePresence mode="popLayout">
+                    <AnimatePresence >
                         {filtered.map(p => {
                             const lowStock = p.stock <= p.stock_alarm;
                             const itemInCart = cart.find(c => c.id === p.id);
@@ -2738,7 +2740,7 @@ export default function POS() {
             </div>
 
             {/* Sticky Mobile Bottom Bar */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0a0f1b]/95 backdrop-blur-md border-t border-slate-200/60 dark:border-slate-800 p-3.5 flex items-center justify-between shadow-2xl px-5 animate-in fade-in slide-in-from-bottom-6">
+            <div className={`lg:hidden fixed left-0 right-0 z-40 bg-white/95 dark:bg-[#0a0f1b]/95 backdrop-blur-md border-t border-slate-200/60 dark:border-slate-800 p-3.5 flex items-center justify-between shadow-2xl px-5 animate-in fade-in slide-in-from-bottom-6 ${isKioskLocked ? "bottom-16" : "bottom-0"}`}>
                 <div 
                     onClick={() => setIsMobileCartOpen(true)}
                     className="flex items-center gap-3 cursor-pointer"
@@ -2782,7 +2784,7 @@ export default function POS() {
             {/* Mobile Bottom Sheet Slide-up Drawer Modal */}
             <AnimatePresence>
                 {isMobileCartOpen && (
-                    <div className="lg:hidden fixed inset-0 z-50 flex items-end justify-center">
+                    <div className="lg:hidden fixed inset-0 z-[60] flex items-end justify-center">
                         {/* Smooth sliding backdrop shadow */}
                         <motion.div 
                             initial={{ opacity: 0 }}
@@ -2798,7 +2800,7 @@ export default function POS() {
                             animate={{ y: 0 }}
                             exit={{ y: "100%" }}
                             transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                            className="relative bg-white dark:bg-[#0c111e] w-full rounded-t-[32px] overflow-hidden shadow-2xl h-[85vh] flex flex-col z-50 border-t border-slate-105 dark:border-slate-850"
+                            className="relative bg-white dark:bg-[#0c111e] w-full rounded-t-[32px] overflow-hidden shadow-2xl h-[85vh] flex flex-col z-[60] border-t border-slate-105 dark:border-slate-850"
                         >
                             {/* Drag Handle element */}
                             <div className="w-12 h-1.5 bg-slate-201 dark:bg-slate-800 rounded-full mx-auto my-3 shrink-0 cursor-pointer" onClick={() => setIsMobileCartOpen(false)} />
