@@ -2457,9 +2457,11 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const costSelect = isAdminOrPropietario ? 'si.cost' : 'NULL as cost';
       const items = db.prepare(`
         SELECT si.id, si.sale_id, si.product_id, si.quantity, si.price, ${costSelect},
-               p.name as product_name, p.sku, p.category
+               COALESCE(si.product_name_snapshot, p.name) as product_name, 
+               COALESCE(si.product_sku_snapshot, p.sku) as sku, 
+               p.category
         FROM sale_items si
-        JOIN products p ON p.id = si.product_id
+        LEFT JOIN products p ON p.id = si.product_id
         WHERE si.sale_id = ?
       `).all(id);
       res.json(items);
@@ -2640,7 +2642,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const currentRate = (exchange_rate !== undefined && exchange_rate !== null) ? Number(exchange_rate) : (rateRow ? parseFloat(rateRow.value) : 6.96);
 
       const saleInsert = db.prepare('INSERT INTO sales (total, discount, payment_method, user_id, client_id, exchange_rate, currency, cierre_id, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)');
-      const itemInsert = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, cost) VALUES (?, ?, ?, ?, ?)');
+      const itemInsert = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, cost, product_name_snapshot, product_sku_snapshot, subtotal_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       const stockUpdate = db.prepare('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?');
       
       const auditPayloads: any[] = [];
@@ -2660,8 +2662,10 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           const pName = prodRow ? prodRow.name : 'Producto Desconocido';
           const pSku = prodRow ? prodRow.sku : '';
           const beforeStock = prodRow ? prodRow.stock : 0;
+          
+          const subtotalMinor = safeQty * safePrice;
 
-          const itemResult = itemInsert.run(saleId, item.product_id, safeQty, safePrice, currentCost);
+          const itemResult = itemInsert.run(saleId, item.product_id, safeQty, safePrice, currentCost, pName, pSku, subtotalMinor);
           itemIds.push(itemResult.lastInsertRowid);
 
           stockUpdate.run(safeQty, item.product_id);
@@ -3155,7 +3159,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const safeRate = sale.exchange_rate || 6.96;
       
       const saleInsert = db.prepare('INSERT INTO sales (total, discount, payment_method, user_id, client_id, exchange_rate, currency, cierre_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)');
-      const itemInsert = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, cost) VALUES (?, ?, ?, ?, ?)');
+      const itemInsert = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, cost, product_name_snapshot, product_sku_snapshot, subtotal_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       const stockUpdate = db.prepare('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?');
       
       let finalSaleId: any = null;
@@ -3176,7 +3180,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           const pSku = prodRow ? prodRow.sku : '';
           const beforeStock = prodRow ? prodRow.stock : 0;
           
-          const itemResult = itemInsert.run(finalSaleId, item.product_id, item.quantity, item.price, currentCost);
+          const subtotalMinor = item.quantity * item.price;
+
+          const itemResult = itemInsert.run(finalSaleId, item.product_id, item.quantity, item.price, currentCost, pName, pSku, subtotalMinor);
           itemIds.push(itemResult.lastInsertRowid);
           
           stockUpdate.run(item.quantity, item.product_id);
@@ -4264,7 +4270,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.get("/api/cash-accounts", (req, res) => {
     try {
       const userRole = req.headers['x-user-role'] || req.query.user_role;
-      const userId = req.headers['x-user-id'] || req.query.user_id;
+      const userId = Number(req.headers['x-user-id'] || req.query.user_id);
 
       if (userRole === 'vendedor') {
         // A seller can only see their own cash account!
@@ -4295,10 +4301,10 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   // Obtener movimientos de caja específicos por vendedor
   app.get("/api/cash-accounts/:sellerId/movements", (req, res) => {
-    const { sellerId } = req.params;
+    const sellerId = Number(req.params.sellerId);
     try {
       const userRole = req.headers['x-user-role'] || req.query.user_role;
-      const userId = req.headers['x-user-id'] || req.query.user_id;
+      const userId = Number(req.headers['x-user-id'] || req.query.user_id);
 
       if (userRole === 'vendedor' && String(userId) !== String(sellerId)) {
         return res.status(403).json({ error: "No tienes autorización para ver los movimientos de caja de otros vendedores." });
@@ -4319,7 +4325,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   // Liquidar/Cerrar periodo de acumulación y reiniciar caja del vendedor a cero (Solo Administrador)
   app.post("/api/cash-accounts/:sellerId/settle", (req, res) => {
-    const { sellerId } = req.params;
+    const sellerId = Number(req.params.sellerId);
     const { admin_id, admin_username, delivered_amount, notes } = req.body;
     try {
       const sellerAcc = db.prepare('SELECT * FROM cash_accounts WHERE seller_id = ?').get(sellerId) as any;
@@ -4383,7 +4389,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.get("/api/cash-settlements", (req, res) => {
     try {
       const userRole = req.headers['x-user-role'] || req.query.user_role;
-      const userId = req.headers['x-user-id'] || req.query.user_id;
+      const userId = Number(req.headers['x-user-id'] || req.query.user_id);
 
       let settlements;
       if (userRole === 'vendedor') {
@@ -4399,7 +4405,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   // Ingresos / Egresos manuales directos en caja de vendedor
   app.post("/api/cash-accounts/:sellerId/adjust", (req, res) => {
-    const { sellerId } = req.params;
+    const sellerId = Number(req.params.sellerId);
     const { amount, type, notes, payment_method } = req.body; // type = 'ingreso_manual' o 'retiro_manual'
     try {
       const isIngreso = type === 'ingreso_manual';

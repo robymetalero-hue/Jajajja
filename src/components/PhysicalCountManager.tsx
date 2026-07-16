@@ -108,10 +108,16 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
       const res = await fetch(`/api/inventory-counts/${countId}`);
       if (res.ok) {
         const data = await res.json();
+        const mapItems = (items: any[]) => items.map(it => ({
+          ...it,
+          system_stock: it.expected_quantity,
+          counted_stock: it.physical_quantity,
+          is_checked: it.status !== 'pendiente' ? 1 : 0
+        }));
         if (isHistoric) {
-          setHistoricItems(data);
+          setHistoricItems(mapItems(data.items || []));
         } else {
-          setSessionItems(data);
+          setSessionItems(mapItems(data.items || []));
         }
       }
     } catch (err) {
@@ -162,7 +168,7 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
       await fetch(`/api/inventory-counts/${activeSession?.id}/items/${itemId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ counted_stock: parsed })
+        body: JSON.stringify({ physical_quantity: parsed })
       });
     } catch (err) {
       console.error("Failed to update counted stock:", err);
@@ -171,6 +177,8 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
 
   const handleToggleItemCheck = async (itemId: number, currentCheck: number) => {
     const nextCheck = currentCheck === 1 ? 0 : 1;
+    const item = sessionItems.find(it => it.id === itemId);
+    if (!item) return;
     
     // Local optimistic update
     setSessionItems(prev => prev.map(it => it.id === itemId ? { ...it, is_checked: nextCheck } : it));
@@ -179,7 +187,7 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
       await fetch(`/api/inventory-counts/${activeSession?.id}/items/${itemId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_checked: nextCheck })
+        body: JSON.stringify({ physical_quantity: item.counted_stock })
       });
     } catch (err) {
       console.error("Failed to check item:", err);

@@ -86,9 +86,14 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_id INTEGER,
     product_id INTEGER,
+    product_name_snapshot TEXT,
+    product_sku_snapshot TEXT,
     quantity INTEGER,
     price REAL,
-    cost REAL DEFAULT NULL
+    cost REAL DEFAULT NULL,
+    price_type TEXT,
+    discount_minor REAL,
+    subtotal_minor REAL
   );
 
   CREATE TABLE IF NOT EXISTS shifts (
