@@ -1108,7 +1108,7 @@ export default function Inventory() {
                                                             </div>
                                                             <div className="text-right flex flex-col">
                                                                 <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400">Stock: {p.stock} pz</span>
-                                                                <span className="text-[9px] text-slate-400 font-bold">Costo: Bs. {p.price_cost || 0}</span>
+                                                                {user?.role === 'admin' && <span className="text-[9px] text-slate-400 font-bold">Costo: Bs. {p.price_cost || 0}</span>}
                                                             </div>
                                                         </button>
                                                     ))}
@@ -1138,10 +1138,12 @@ export default function Inventory() {
                                                     <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Histórico actual</span>
                                                     <span className="text-xs font-mono font-black text-slate-700 dark:text-slate-300">{selectedProductForStockIn.stock} pz</span>
                                                 </div>
-                                                <div className="flex flex-col text-right">
-                                                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Costo actual</span>
-                                                    <span className="text-xs font-mono font-black text-indigo-600 dark:text-indigo-400">Bs. {(Number(selectedProductForStockIn.price_cost) || 0).toFixed(2)}</span>
-                                                </div>
+                                                {user?.role === 'admin' && (
+                                                    <div className="flex flex-col text-right">
+                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Costo actual</span>
+                                                        <span className="text-xs font-mono font-black text-indigo-600 dark:text-indigo-400">Bs. {(Number(selectedProductForStockIn.price_cost) || 0).toFixed(2)}</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -1383,21 +1385,23 @@ export default function Inventory() {
                                     <span className="text-[10px] font-bold text-slate-400 pl-1">~ {roundBs(Number(priceBulk) * exchangeRate).toFixed(2)} Bs.</span>
                                 </div>
 
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Precio de Costo ($)</label>
-                                    <input 
-                                        type="number" 
-                                        step="0.01"
-                                        min="0"
-                                        disabled={!hasPermission(user, 'modify_prices')}
-                                        className={`p-2.5 border border-slate-200 dark:border-slate-850 rounded-xl dark:bg-[#070b13] text-xs font-mono font-black text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-blue-550 dark:text-white ${!hasPermission(user, 'modify_prices') ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-900' : ''}`}
-                                        value={priceCost}
-                                        onFocus={e => e.target.select()}
-                                        onClick={e => (e.target as HTMLInputElement).select()}
-                                        onChange={e => setPriceCost(e.target.value === "" ? "" : Number(e.target.value))}
-                                    />
-                                    <span className="text-[10px] font-bold text-slate-400 pl-1">~ {roundBs(Number(priceCost) * exchangeRate).toFixed(2)} Bs.</span>
-                                </div>
+                                {user?.role === 'admin' && (
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Precio de Costo ($)</label>
+                                        <input 
+                                            type="number" 
+                                            step="0.01"
+                                            min="0"
+                                            disabled={!hasPermission(user, 'modify_prices')}
+                                            className={`p-2.5 border border-slate-200 dark:border-slate-850 rounded-xl dark:bg-[#070b13] text-xs font-mono font-black text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-blue-550 dark:text-white ${!hasPermission(user, 'modify_prices') ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-900' : ''}`}
+                                            value={priceCost}
+                                            onFocus={e => e.target.select()}
+                                            onClick={e => (e.target as HTMLInputElement).select()}
+                                            onChange={e => setPriceCost(e.target.value === "" ? "" : Number(e.target.value))}
+                                        />
+                                        <span className="text-[10px] font-bold text-slate-400 pl-1">~ {roundBs(Number(priceCost) * exchangeRate).toFixed(2)} Bs.</span>
+                                    </div>
+                                )}
 
                                 <div className="flex flex-col gap-1.5 col-span-2">
                                     <label className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Imagen del Producto (Opcional)</label>
@@ -1679,11 +1683,13 @@ export default function Inventory() {
                                 {isExpanded && (
                                     <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800/80 space-y-3 animate-in slide-in-from-top-2 duration-150">
                                         <div className="grid grid-cols-2 gap-3">
-                                            <div className="bg-slate-50/50 dark:bg-black/25 p-2.5 rounded-xl border border-slate-200/50 dark:border-slate-850/80 flex flex-col gap-0.5">
-                                                <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500">Precio Costo</span>
-                                                <span className="text-xs font-mono font-black text-emerald-600 dark:text-emerald-400">${(Number(p.price_cost) || 0).toFixed(2)} USD</span>
-                                                <span className="text-[10px] font-mono text-slate-450 dark:text-slate-400">({roundBs((Number(p.price_cost) || 0) * exchangeRate).toFixed(2)} Bs)</span>
-                                            </div>
+                                            {user?.role === 'admin' && (
+                                                <div className="bg-slate-50/50 dark:bg-black/25 p-2.5 rounded-xl border border-slate-200/50 dark:border-slate-850/80 flex flex-col gap-0.5">
+                                                    <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500">Precio Costo</span>
+                                                    <span className="text-xs font-mono font-black text-emerald-600 dark:text-emerald-400">${(Number(p.price_cost) || 0).toFixed(2)} USD</span>
+                                                    <span className="text-[10px] font-mono text-slate-450 dark:text-slate-400">({roundBs((Number(p.price_cost) || 0) * exchangeRate).toFixed(2)} Bs)</span>
+                                                </div>
+                                            )}
                                             <div className="bg-slate-50/50 dark:bg-black/25 p-2.5 rounded-xl border border-slate-200/50 dark:border-slate-850/80 flex flex-col gap-0.5">
                                                 <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500">Precio Mayorista</span>
                                                 <span className="text-xs font-mono font-black text-purple-600 dark:text-purple-400">${(Number(p.price_bulk) || 0).toFixed(2)} USD</span>
@@ -1696,12 +1702,14 @@ export default function Inventory() {
                                                 <span className="text-[8px] font-black uppercase text-slate-400">Alerta de Stock</span>
                                                 <span className="font-mono text-rose-500 font-extrabold mt-0.5">{p.stock_alarm} pz (Mínimo)</span>
                                             </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-[8px] font-black uppercase text-slate-400">Rentabilidad</span>
-                                                <span className="font-mono text-emerald-600 dark:text-emerald-400 font-extrabold mt-0.5">
-                                                    {p.price_unit > 0 ? (((p.price_unit - p.price_cost) / p.price_unit) * 100).toFixed(1) : "0.0"}%
-                                                </span>
-                                            </div>
+                                            {user?.role === 'admin' && (
+                                                <div className="flex flex-col">
+                                                    <span className="text-[8px] font-black uppercase text-slate-400">Rentabilidad</span>
+                                                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-extrabold mt-0.5">
+                                                        {p.price_unit > 0 ? (((p.price_unit - p.price_cost) / p.price_unit) * 100).toFixed(1) : "0.0"}%
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {renderProductHistoryLogs(p.id)}
@@ -1724,7 +1732,7 @@ export default function Inventory() {
                                 <th className="p-4">Descripción / Artículo</th>
                                 <th className="p-4">Categoría</th>
                                 <th className="p-4 text-right">Existencias</th>
-                                <th className="p-4 text-right">Precio Costo</th>
+                                {user?.role === 'admin' && <th className="p-4 text-right">Precio Costo</th>}
                                 <th className="p-4 text-right">Precio Mayor</th>
                                 <th className="p-4 text-right">Precio Detalle</th>
                                 <th className="p-4 text-center pr-6">Acciones</th>
@@ -1816,12 +1824,14 @@ export default function Inventory() {
                                                         {p.stock} pz
                                                     </span>
                                                 </td>
-                                                <td className="p-4 text-right text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                                                    <div className="flex flex-col items-end">
-                                                        <span>${(Number(p.price_cost) || 0).toFixed(2)}</span>
-                                                        <span className="text-[9.5px] text-slate-404 font-bold opacity-80">({roundBs((Number(p.price_cost) || 0) * exchangeRate).toFixed(2)} Bs)</span>
-                                                    </div>
-                                                </td>
+                                                {user?.role === 'admin' && (
+                                                    <td className="p-4 text-right text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                                                        <div className="flex flex-col items-end">
+                                                            <span>${(Number(p.price_cost) || 0).toFixed(2)}</span>
+                                                            <span className="text-[9.5px] text-slate-404 font-bold opacity-80">({roundBs((Number(p.price_cost) || 0) * exchangeRate).toFixed(2)} Bs)</span>
+                                                        </div>
+                                                    </td>
+                                                )}
                                                 <td className="p-4 text-right text-xs font-bold font-mono text-purple-650 dark:text-purple-450">
                                                     <div className="flex flex-col items-end">
                                                         <span>${(Number(p.price_bulk) || 0).toFixed(2)}</span>
@@ -1912,32 +1922,34 @@ export default function Inventory() {
                                                                 </div>
 
                                                                 {/* Rentabilidad y Margen Comercial Business Info Card (Avoids repeating the exact same prices shown above) */}
-                                                                <div className="bg-slate-50/30 dark:bg-black/15 p-4 border border-slate-200/40 dark:border-slate-850 rounded-2xl flex flex-col gap-3">
-                                                                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-850 pb-1.5 flex items-center gap-1.5 select-none">
-                                                                        <Sparkles size={11} className="text-indigo-500" />
-                                                                        Análisis de Rentabilidad Comercial
-                                                                    </span>
-                                                                    <div className="grid grid-cols-2 gap-3.5">
-                                                                        <div className="flex flex-col p-3 bg-white dark:bg-[#111625] rounded-xl border border-slate-200/40 dark:border-slate-850/80">
-                                                                            <span className="text-[8px] font-black text-slate-400 uppercase">Margen de Ganancia Neto</span>
-                                                                            <span className="text-sm text-emerald-600 dark:text-emerald-400 font-mono font-black mt-1">
-                                                                                {p.price_unit > 0 ? (((p.price_unit - p.price_cost) / p.price_unit) * 100).toFixed(1) : "0.0"}%
-                                                                            </span>
-                                                                            <span className="text-[9px] text-slate-450 dark:text-slate-500 font-semibold mt-0.5 leading-normal">
-                                                                                Fracción de ganancia neta contenida en el precio de venta final.
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex flex-col p-3 bg-white dark:bg-[#111625] rounded-xl border border-slate-200/40 dark:border-slate-850/80">
-                                                                            <span className="text-[8px] font-black text-slate-400 uppercase">Porcentaje de Margen Comercial (Markup)</span>
-                                                                            <span className="text-sm text-purple-600 dark:text-purple-400 font-mono font-black mt-1">
-                                                                                {p.price_cost > 0 ? (((p.price_unit - p.price_cost) / p.price_cost) * 100).toFixed(1) : "0.0"}%
-                                                                            </span>
-                                                                            <span className="text-[9px] text-slate-450 dark:text-slate-500 font-semibold mt-0.5 leading-normal">
-                                                                                Incremento aplicado sobre el costo bruto de adquisición.
-                                                                            </span>
+                                                                {user?.role === 'admin' && (
+                                                                    <div className="bg-slate-50/30 dark:bg-black/15 p-4 border border-slate-200/40 dark:border-slate-850 rounded-2xl flex flex-col gap-3">
+                                                                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-850 pb-1.5 flex items-center gap-1.5 select-none">
+                                                                            <Sparkles size={11} className="text-indigo-500" />
+                                                                            Análisis de Rentabilidad Comercial
+                                                                        </span>
+                                                                        <div className="grid grid-cols-2 gap-3.5">
+                                                                            <div className="flex flex-col p-3 bg-white dark:bg-[#111625] rounded-xl border border-slate-200/40 dark:border-slate-850/80">
+                                                                                <span className="text-[8px] font-black text-slate-400 uppercase">Margen de Ganancia Neto</span>
+                                                                                <span className="text-sm text-emerald-600 dark:text-emerald-400 font-mono font-black mt-1">
+                                                                                    {p.price_unit > 0 ? (((p.price_unit - p.price_cost) / p.price_unit) * 100).toFixed(1) : "0.0"}%
+                                                                                </span>
+                                                                                <span className="text-[9px] text-slate-450 dark:text-slate-500 font-semibold mt-0.5 leading-normal">
+                                                                                    Fracción de ganancia neta contenida en el precio de venta final.
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex flex-col p-3 bg-white dark:bg-[#111625] rounded-xl border border-slate-200/40 dark:border-slate-850/80">
+                                                                                <span className="text-[8px] font-black text-slate-400 uppercase">Porcentaje de Margen Comercial (Markup)</span>
+                                                                                <span className="text-sm text-purple-600 dark:text-purple-400 font-mono font-black mt-1">
+                                                                                    {p.price_cost > 0 ? (((p.price_unit - p.price_cost) / p.price_cost) * 100).toFixed(1) : "0.0"}%
+                                                                                </span>
+                                                                                <span className="text-[9px] text-slate-450 dark:text-slate-500 font-semibold mt-0.5 leading-normal">
+                                                                                    Incremento aplicado sobre el costo bruto de adquisición.
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
-                                                                </div>
+                                                                )}
 
                                                                 <div className="flex items-center gap-2 text-slate-400 text-[9px] pl-1 font-bold">
                                                                     <Tag size={10} />

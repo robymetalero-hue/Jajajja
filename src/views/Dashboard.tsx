@@ -586,15 +586,17 @@ export default function Dashboard() {
                                             fillOpacity={1} 
                                             fill="url(#colorSales)" 
                                         />
-                                        <Area 
-                                            type="monotone" 
-                                            dataKey="profit" 
-                                            name="profit"
-                                            stroke="#10b981" 
-                                            strokeWidth={3} 
-                                            fillOpacity={1} 
-                                            fill="url(#colorProfit)" 
-                                        />
+                                        {user?.role === 'admin' && (
+                                            <Area 
+                                                type="monotone" 
+                                                dataKey="profit" 
+                                                name="profit"
+                                                stroke="#10b981" 
+                                                strokeWidth={3} 
+                                                fillOpacity={1} 
+                                                fill="url(#colorProfit)" 
+                                            />
+                                        )}
                                         {dateRange.compare && (
                                             <>
                                                 <Area 
@@ -607,16 +609,18 @@ export default function Dashboard() {
                                                     fillOpacity={1} 
                                                     fill="url(#colorCompareSales)" 
                                                 />
-                                                <Area 
-                                                    type="monotone" 
-                                                    dataKey="compareProfit" 
-                                                    name="compareProfit"
-                                                    stroke="#f59e0b" 
-                                                    strokeWidth={2}
-                                                    strokeDasharray="5 5"
-                                                    fillOpacity={1} 
-                                                    fill="url(#colorCompareProfit)" 
-                                                />
+                                                {user?.role === 'admin' && (
+                                                    <Area 
+                                                        type="monotone" 
+                                                        dataKey="compareProfit" 
+                                                        name="compareProfit"
+                                                        stroke="#f59e0b" 
+                                                        strokeWidth={2}
+                                                        strokeDasharray="5 5"
+                                                        fillOpacity={1} 
+                                                        fill="url(#colorCompareProfit)" 
+                                                    />
+                                                )}
                                             </>
                                         )}
                                     </AreaChart>
@@ -667,11 +671,11 @@ export default function Dashboard() {
                                             }}
                                         />
                                         <Bar dataKey="total" name="total" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={30} />
-                                        <Bar dataKey="profit" name="profit" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                                        {user?.role === 'admin' && <Bar dataKey="profit" name="profit" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={30} />}
                                         {dateRange.compare && (
                                             <>
                                                 <Bar dataKey="compareTotal" name="compareTotal" fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={20} />
-                                                <Bar dataKey="compareProfit" name="compareProfit" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                                                {user?.role === 'admin' && <Bar dataKey="compareProfit" name="compareProfit" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={20} />}
                                             </>
                                         )}
                                     </BarChart>
@@ -722,11 +726,11 @@ export default function Dashboard() {
                                             }}
                                         />
                                         <Line type="monotone" dataKey="total" name="total" stroke="#6366f1" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                                        <Line type="monotone" dataKey="profit" name="profit" stroke="#10b981" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                                        {user?.role === 'admin' && <Line type="monotone" dataKey="profit" name="profit" stroke="#10b981" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />}
                                         {dateRange.compare && (
                                             <>
                                                 <Line type="monotone" dataKey="compareTotal" name="compareTotal" stroke="#ec4899" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />
-                                                <Line type="monotone" dataKey="compareProfit" name="compareProfit" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />
+                                                {user?.role === 'admin' && <Line type="monotone" dataKey="compareProfit" name="compareProfit" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />}
                                             </>
                                         )}
                                     </LineChart>

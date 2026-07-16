@@ -115,6 +115,9 @@ const JWT_SECRET = process.env.JWT_SECRET || "default_super_secret_gtr_pos";
 async function startServer() {
   const app = express();
 
+  // Configure Express to trust the local reverse proxy / Cloud Run proxy
+  app.set("trust proxy", 1);
+
   // SECURITY: Enable Helmet for security headers
   app.use(helmet({
     contentSecurityPolicy: false,
@@ -128,6 +131,7 @@ async function startServer() {
     message: { error: 'Demasiados intentos de inicio de sesión, inténtelo más tarde.' },
     standardHeaders: true,
     legacyHeaders: false,
+    validate: false,
   });
 
   app.use(express.json({ limit: "15mb" }));
@@ -293,7 +297,7 @@ async function startServer() {
   }
   app.use("/shared_tickets", express.static(sharedTicketsDir));
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = parseInt(process.env.PORT || "3000", 10);
   
   const server = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });
@@ -2383,20 +2387,57 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.get("/api/sales", (req, res) => {
     try {
       const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+      const userRole = req.headers['x-user-role'];
+      const userId = req.headers['x-user-id'];
       
+      let viewOwnSalesOnly = false;
+      const isAdminOrPropietario = userRole === 'admin' || userRole === 'propietario';
+      
+      if (!isAdminOrPropietario) {
+        const userPermissionsRaw = req.headers['x-user-permissions'];
+        if (userPermissionsRaw) {
+          try {
+            const perms = JSON.parse(String(userPermissionsRaw));
+            if (perms.view_own_sales_only) {
+              viewOwnSalesOnly = true;
+            }
+          } catch (e) {
+            viewOwnSalesOnly = true; // default to true on parse failure
+          }
+        } else {
+          viewOwnSalesOnly = true; // default to true
+        }
+      }
+
+      let capitalSelect = `0.0 as capital`;
+      if (isAdminOrPropietario) {
+        capitalSelect = `(SELECT COALESCE(SUM(si.quantity * (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate)), 0) FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = s.id) as capital`;
+      }
+
       let query = `
         SELECT s.*, c.name as client_name, u.username as user_name,
                (SELECT COALESCE(SUM(quantity), 0) FROM sale_items WHERE sale_id = s.id) as item_count,
-               (SELECT COALESCE(SUM(si.quantity * (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate)), 0) FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = s.id) as capital
+               ${capitalSelect}
         FROM sales s
         LEFT JOIN clients c ON c.id = s.client_id
         LEFT JOIN users u ON u.id = s.user_id
       `;
       
-      let params: string[] = [];
+      let conditions: string[] = [];
+      let params: any[] = [];
+      
       if (startDate && endDate) {
-        query += ` WHERE date(s.created_at) >= date(?) AND date(s.created_at) <= date(?) `;
+        conditions.push(` date(s.created_at) >= date(?) AND date(s.created_at) <= date(?) `);
         params.push(startDate, endDate);
+      }
+      
+      if (viewOwnSalesOnly && userId) {
+        conditions.push(` s.user_id = ? `);
+        params.push(Number(userId));
+      }
+      
+      if (conditions.length > 0) {
+        query += ` WHERE ` + conditions.join(' AND ');
       }
       
       query += ` ORDER BY s.created_at DESC `;
@@ -2410,9 +2451,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   app.get("/api/sales/:id/items", (req, res) => {
     const { id } = req.params;
+    const userRole = req.headers['x-user-role'];
+    const isAdminOrPropietario = userRole === 'admin' || userRole === 'propietario';
     try {
+      const costSelect = isAdminOrPropietario ? 'si.cost' : 'NULL as cost';
       const items = db.prepare(`
-        SELECT si.*, p.name as product_name, p.sku, p.category
+        SELECT si.id, si.sale_id, si.product_id, si.quantity, si.price, ${costSelect},
+               p.name as product_name, p.sku, p.category
         FROM sale_items si
         JOIN products p ON p.id = si.product_id
         WHERE si.sale_id = ?
@@ -3814,6 +3859,29 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   });
 
   // REST API: Receipt Template Configuration
+  
+  app.get("/api/settings/kiosk", (req, res) => {
+    try {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('kiosk_mode') as any;
+      const kiosk_mode = row && row.value === 'true' ? true : false;
+      res.json({ kiosk_mode });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/settings/kiosk", (req, res) => {
+    try {
+      const { kiosk_mode } = req.body;
+      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('kiosk_mode', kiosk_mode ? 'true' : 'false');
+      syncAfterWrite("settings");
+      try { broadcastAlert(JSON.stringify({ type: "kiosk_mode_changed", kiosk_mode: kiosk_mode ? true : false })); } catch (err) {}
+      res.json({ success: true, kiosk_mode });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/settings/receipt", (req, res) => {
     try {
       const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('receipt_template') as any;
@@ -4721,7 +4789,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
     try {
       const activeSession = await getAI().live.connect({
-        model: "gemini-2.0-flash-exp",
+        model: "gemini-3.1-flash-live-preview",
         callbacks: {
           onmessage: (message: LiveServerMessage) => {
             if (message.serverContent?.interrupted) {

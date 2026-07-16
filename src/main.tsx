@@ -82,24 +82,40 @@ try {
             const user = JSON.parse(userJson);
             if (user) {
               init = init || {};
-              const headers = new Headers(init.headers || {});
-              if (!headers.has('x-user-id') && user.id) {
-                headers.set('x-user-id', String(user.id));
+              const headersObj: Record<string, string> = {};
+              if (init.headers) {
+                if (typeof (init.headers as any).forEach === 'function') {
+                  (init.headers as any).forEach((value: string, key: string) => {
+                    headersObj[key.toLowerCase()] = value;
+                  });
+                } else if (Array.isArray(init.headers)) {
+                  init.headers.forEach(([key, value]) => {
+                    headersObj[key.toLowerCase()] = value;
+                  });
+                } else if (typeof init.headers === 'object') {
+                  Object.keys(init.headers).forEach(key => {
+                    headersObj[key.toLowerCase()] = (init.headers as any)[key];
+                  });
+                }
               }
-              if (!headers.has('x-user-role') && user.role) {
-                headers.set('x-user-role', String(user.role));
+
+              if (!headersObj['x-user-id'] && user.id) {
+                headersObj['x-user-id'] = String(user.id);
               }
-              if (!headers.has('x-user-username') && user.username) {
-                headers.set('x-user-username', String(user.username));
+              if (!headersObj['x-user-role'] && user.role) {
+                headersObj['x-user-role'] = String(user.role);
               }
-              if (!headers.has('x-user-permissions') && user.permissions) {
-                headers.set('x-user-permissions', JSON.stringify(user.permissions));
+              if (!headersObj['x-user-username'] && user.username) {
+                headersObj['x-user-username'] = String(user.username);
+              }
+              if (!headersObj['x-user-permissions'] && user.permissions) {
+                headersObj['x-user-permissions'] = JSON.stringify(user.permissions);
               }
               const token = localStorage.getItem('auth_token');
-              if (token && !headers.has('Authorization')) {
-                headers.set('Authorization', `Bearer ${token}`);
+              if (token && !headersObj['authorization']) {
+                headersObj['authorization'] = `Bearer ${token}`;
               }
-              init.headers = headers;
+              init.headers = headersObj;
             }
           } catch (err) {
             console.error("Error parsing user in fetch patch", err);
@@ -108,9 +124,13 @@ try {
       }
       return originalFetch(input, init).then(res => {
         if (res.status === 401 && !url.includes('/auth/login')) {
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('user');
-            window.location.reload();
+            const hasToken = localStorage.getItem('auth_token');
+            const hasUser = localStorage.getItem('user');
+            if (hasToken || hasUser) {
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('user');
+                window.location.reload();
+            }
         }
         return res;
       });

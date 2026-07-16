@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export default function AuditoriaView() {
-    const { showNotification } = useAppContext();
+    const { showNotification, user } = useAppContext();
     const [logs, setLogs] = useState<any[]>([]);
     const [uniqueUsers, setUniqueUsers] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
@@ -449,11 +449,11 @@ export default function AuditoriaView() {
                 <div>
                     <h1 className="text-xl font-black uppercase tracking-wider flex items-center gap-2.5">
                         <History className="text-indigo-600 dark:text-indigo-400" size={24} />
-                        Auditoría Integral del Sistema POS GTR
+                        Registro de Actividad y Auditoría
                     </h1>
                     <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-bold flex items-center gap-1">
                         <ShieldCheck className="text-emerald-500 shrink-0" size={13} />
-                        Trazabilidad inmutable criptográficamente protegida. Control total de acciones de usuarios, modificaciones, precios e inventario.
+                        Captura detallada de quién realizó cada cambio importante en el inventario, caja y acciones del sistema.
                     </p>
                 </div>
 
@@ -840,10 +840,12 @@ export default function AuditoriaView() {
                                                 <span className="text-slate-400 font-semibold">Precio Mayorista:</span>
                                                 <span className="font-bold text-slate-800 dark:text-slate-100">${Number(p.price_bulk).toFixed(2)} USD</span>
                                             </div>
-                                            <div className="flex justify-between text-xs">
-                                                <span className="text-slate-400 font-semibold">Costo Compra:</span>
-                                                <span className="font-bold text-red-500 dark:text-red-400">${Number(p.price_cost || 0).toFixed(2)} USD</span>
-                                            </div>
+                                            {user?.role === 'admin' && (
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400 font-semibold">Costo Compra:</span>
+                                                    <span className="font-bold text-red-500 dark:text-red-400">${Number(p.price_cost || 0).toFixed(2)} USD</span>
+                                                </div>
+                                            )}
                                             <div className="flex justify-between text-xs">
                                                 <span className="text-slate-400 font-semibold">Stock Físico:</span>
                                                 <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{p.stock} pz</span>
@@ -884,10 +886,15 @@ export default function AuditoriaView() {
                             </div>
                         ) : (
                             <div className="flex flex-col gap-6 relative pl-5 border-l border-slate-200/80 dark:border-slate-850/60 ml-2 py-2 flex-1">
-                                {priceHistory.map((historyLog) => {
-                                    const isCostChange = historyLog.event_type === 'cambio_costo';
-                                    const beforeData = typeof historyLog.before_data === 'string' ? JSON.parse(historyLog.before_data || '{}') : (historyLog.before_data || {});
-                                    const afterData = typeof historyLog.after_data === 'string' ? JSON.parse(historyLog.after_data || '{}') : (historyLog.after_data || {});
+                                {(user?.role === 'admin' ? priceHistory : priceHistory.filter(log => log.event_type !== 'cambio_costo')).length === 0 ? (
+                                    <div className="flex-1 flex flex-col justify-center items-center py-10 text-center text-slate-400 font-black uppercase text-xs tracking-wider">
+                                        No hay registros de cambios de precio visibles.
+                                    </div>
+                                ) : (
+                                    (user?.role === 'admin' ? priceHistory : priceHistory.filter(log => log.event_type !== 'cambio_costo')).map((historyLog) => {
+                                        const isCostChange = historyLog.event_type === 'cambio_costo';
+                                        const beforeData = typeof historyLog.before_data === 'string' ? JSON.parse(historyLog.before_data || '{}') : (historyLog.before_data || {});
+                                        const afterData = typeof historyLog.after_data === 'string' ? JSON.parse(historyLog.after_data || '{}') : (historyLog.after_data || {});
                                     
                                     const prevPrice = isCostChange ? (beforeData.price_cost || historyLog.price_before) : (beforeData.price_unit || historyLog.price_before);
                                     const newPrice = isCostChange ? (afterData.price_cost || historyLog.price_after) : (afterData.price_unit || historyLog.price_after);
@@ -932,7 +939,7 @@ export default function AuditoriaView() {
                                             </div>
                                         </div>
                                     );
-                                })}
+                                }))}
                             </div>
                         )}
                     </div>

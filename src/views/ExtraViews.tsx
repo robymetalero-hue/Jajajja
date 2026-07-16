@@ -977,46 +977,50 @@ export function HistorialVentasView() {
                 </div>
 
                 {/* 2. Capital Invertido */}
-                <div className="bg-white dark:bg-[#0c111e] p-4 rounded-2xl border border-slate-200/60 dark:border-slate-850 shadow-sm flex flex-col gap-1.5 transition hover:scale-[1.01]">
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                        <span className="text-[9px] uppercase font-bold tracking-widest text-slate-400">CAPITAL INVERTIDO</span>
-                    </div>
-                    <span className="text-base font-black text-amber-600 dark:text-amber-550 font-mono">
-                        Bs. {totalCapital.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <span className="text-[9px] text-slate-400 font-semibold truncate animate-pulse">
-                        Costo de productos
-                    </span>
-                </div>
+                {user?.role === 'admin' && (
+                    <>
+                        <div className="bg-white dark:bg-[#0c111e] p-4 rounded-2xl border border-slate-200/60 dark:border-slate-850 shadow-sm flex flex-col gap-1.5 transition hover:scale-[1.01]">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                <span className="text-[9px] uppercase font-bold tracking-widest text-slate-400">CAPITAL INVERTIDO</span>
+                            </div>
+                            <span className="text-base font-black text-amber-600 dark:text-amber-550 font-mono">
+                                Bs. {totalCapital.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-semibold truncate animate-pulse">
+                                Costo de productos
+                            </span>
+                        </div>
 
-                {/* 3. Utilidad / Ganancia Generada */}
-                <div className="bg-white dark:bg-[#0c111e] p-4 rounded-2xl border-2 border-emerald-550/30 dark:border-emerald-500/20 shadow-sm flex flex-col gap-1.5 transition hover:scale-[1.02] bg-emerald-50/10 dark:bg-emerald-950/5">
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                        <span className="text-[9px] uppercase font-bold tracking-widest text-emerald-600 dark:text-emerald-400">GANANCIA GENERADA</span>
-                    </div>
-                    <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                        Bs. {totalProfit.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <span className="text-[9px] text-emerald-600 dark:text-emerald-500 font-semibold truncate">
-                        Rentabilidad neta
-                    </span>
-                </div>
+                        {/* 3. Utilidad / Ganancia Generada */}
+                        <div className="bg-white dark:bg-[#0c111e] p-4 rounded-2xl border-2 border-emerald-550/30 dark:border-emerald-500/20 shadow-sm flex flex-col gap-1.5 transition hover:scale-[1.02] bg-emerald-50/10 dark:bg-emerald-950/5">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                                <span className="text-[9px] uppercase font-bold tracking-widest text-emerald-600 dark:text-emerald-400">GANANCIA GENERADA</span>
+                            </div>
+                            <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                                Bs. {totalProfit.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-[9px] text-emerald-600 dark:text-emerald-500 font-semibold truncate">
+                                Rentabilidad neta
+                            </span>
+                        </div>
 
-                {/* 4. Margen de Beneficio */}
-                <div className="bg-white dark:bg-[#0c111e] p-4 rounded-2xl border border-slate-200/60 dark:border-slate-850 shadow-sm flex flex-col gap-1.5 transition hover:scale-[1.01]">
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
-                        <span className="text-[9px] uppercase font-bold tracking-widest text-slate-400">MARGEN NETA</span>
-                    </div>
-                    <span className="text-base font-black text-violet-600 dark:text-violet-400 font-mono">
-                        {profitMargin.toFixed(1)}%
-                    </span>
-                    <span className="text-[9px] text-slate-400 font-semibold truncate animate-pulse">
-                        Retorno sobre ventas
-                    </span>
-                </div>
+                        {/* 4. Margen de Beneficio */}
+                        <div className="bg-white dark:bg-[#0c111e] p-4 rounded-2xl border border-slate-200/60 dark:border-slate-850 shadow-sm flex flex-col gap-1.5 transition hover:scale-[1.01]">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
+                                <span className="text-[9px] uppercase font-bold tracking-widest text-slate-400">MARGEN NETA</span>
+                            </div>
+                            <span className="text-base font-black text-violet-600 dark:text-violet-400 font-mono">
+                                {profitMargin.toFixed(1)}%
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-semibold truncate animate-pulse">
+                                Retorno sobre ventas
+                            </span>
+                        </div>
+                    </>
+                )}
 
                 {/* 5. Boletas de Venta */}
                 <div className="bg-white dark:bg-[#0c111e] p-4 rounded-2xl border border-slate-200/60 dark:border-slate-850 shadow-sm flex flex-col gap-1.5 transition hover:scale-[1.01]">

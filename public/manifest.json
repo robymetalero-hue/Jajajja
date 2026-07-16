@@ -1,6 +1,6 @@
 {
-  "name": "GTR POS - AI-Powered Point of Sale",
-  "short_name": "GTR POS",
+  "name": "Digital Store - AI-Powered Point of Sale",
+  "short_name": "Digital Store",
   "description": "Advanced Point of Sale (POS) system integrated with Gemini Live for natural voice commands, automated checkout, real-time metrics, inventory alerts, and instant receipt downloads.",
   "start_url": "/",
   "display": "standalone",

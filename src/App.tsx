@@ -18,11 +18,12 @@ import {
     InicioView, HistorialVentasView, VentasPendientesView, 
     DepartamentosView, DevolucionesView, AnalisisView 
 } from './views/ExtraViews';
+import PhysicalCountManager from './components/PhysicalCountManager';
 import AudioVoice from './components/AudioVoice';
 import { 
     Menu, X, Home, ShoppingCart, Clock, Receipt, PackageSearch, 
     Folder, ClipboardCheck, Undo2, LayoutDashboard, TrendingUp, 
-    Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History, Loader2
+    Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History, Loader2, Store
 } from 'lucide-react';
 
 // Animated nav bar dynamic icons with custom physical micro-movements
@@ -221,14 +222,23 @@ function AppLayout() {
     const { 
         darkMode, setDarkMode, user, setUser, view, setView, isOffline, isSyncing, triggerOnlineSync,
         isAutonomousTesting, setIsAutonomousTesting, autonomousStep, setAutonomousStep, autonomousLogs, setAutonomousLogs,
-        products, pwaPrompt, installPWA, isPwaInstalled, isInitializing
+        products, pwaPrompt, installPWA, isPwaInstalled, isInitializing, kioskMode
     } = useAppContext();
+    
+    const isKioskLocked = (kioskMode || (user && user.role === 'vendedor')) && user?.role !== 'admin' && user?.role !== 'propietario';
     const lowStockCount = products ? products.filter(p => p.stock <= p.stock_alarm).length : 0;
     const [localWorkers, setLocalWorkers] = useState<any[]>([]);
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showDevicesModal, setShowDevicesModal] = useState(false);
     const [globalNotification, setGlobalNotification] = useState<{message: string; type: "success"|"error"|"warn"} | null>(null);
 
+    
+    useEffect(() => {
+        const allowedKioskViews = ['pos', 'cajas', 'historial_ventas', 'productos', 'conteo_fisico'];
+        if (isKioskLocked && !allowedKioskViews.includes(view)) {
+            setView('pos');
+        }
+    }, [isKioskLocked, view, setView]);
     useEffect(() => {
         if (user) {
             startAutoBackupScheduler("23:55", (msg, type) => {
@@ -309,6 +319,9 @@ function AppLayout() {
     }, []);
 
     const loadWorkers = async () => {
+        if (!user || (user.role as string) === 'none' || user.username === 'none') {
+            return;
+        }
         try {
             const res = await fetch('/api/users');
             if (res.ok) {
@@ -319,8 +332,10 @@ function AppLayout() {
     };
 
     useEffect(() => {
-        loadWorkers();
-    }, [view]);
+        if (user && (user.role as string) !== 'none' && user.username !== 'none') {
+            loadWorkers();
+        }
+    }, [view, user]);
 
     if (!user || (user.role as string) === 'none' || user.username === 'none') {
         return <LoginScreen />;
@@ -379,10 +394,10 @@ function AppLayout() {
                 <div className="p-5 border-b border-slate-100 dark:border-slate-850/60 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/15">
-                            <Sparkles size={16} className="animate-pulse" />
+                            <Store size={16} className="animate-pulse" />
                         </div>
                         <div className="flex flex-col">
-                            <span className="font-sans font-black text-slate-850 dark:text-white text-base tracking-tight leading-none">GTR POS</span>
+                            <span className="font-sans font-black text-slate-850 dark:text-white text-base tracking-tight leading-none">Digital Store</span>
                             {isOffline ? (
                                 <span className="text-[9px] font-extrabold text-amber-500/95 dark:text-amber-400 mt-1 uppercase tracking-widest font-mono flex items-center gap-1.5 transition-all duration-300">
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -472,7 +487,7 @@ function AppLayout() {
                         {renderNavItem('productos', 'Productos', PackageSearch, 'view_inventory')}
                         {renderNavItem('departamentos', 'Departamentos', Folder, 'view_inventory')}
                         {renderNavItem('inventario', 'Inventario', ClipboardCheck, 'view_inventory')}
-                        {renderNavItem('auditoria', 'Auditoría', History, 'view_inventory')}
+                        
                         {renderNavItem('devoluciones', 'Devoluciones', Undo2, 'view_inventory')}
                     </div>
 
@@ -482,6 +497,8 @@ function AppLayout() {
                         {renderNavItem('reportes', 'Reportes', LayoutDashboard, 'view_reports')}
                         {renderNavItem('analisis', 'Análisis Productos', TrendingUp, 'view_reports')}
                         {renderNavItem('cajas', 'Cajas & Ingresos', Landmark, 'manage_caja')}
+                                    {renderNavItem('auditoria', 'Registro de Actividad', History, 'view_audit')}
+                        {renderNavItem('auditoria', 'Registro de Actividad', History, 'view_audit')}
                         {renderNavItem('configuraciones', 'Configuraciones', Settings)}
                         {renderNavItem('diagnostico', 'Diagnósticos GTR', Activity)}
                         {user?.role === 'admin' && renderNavItem('usuarios', 'Usuarios', Users)}
@@ -551,6 +568,106 @@ function AppLayout() {
         </div>
     );
 
+    const kioskSidebarContent = (
+        <div className="flex flex-col justify-between h-full bg-white dark:bg-[#0c111e] h-screen select-none border-r border-slate-200/60 dark:border-slate-850/40">
+            <div>
+                {/* Header logo container */}
+                <div className="p-5 border-b border-slate-100 dark:border-slate-850/60 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500 flex items-center justify-center text-white shadow-xl shadow-amber-500/15">
+                            <Store size={16} className="animate-pulse" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="font-sans font-black text-slate-850 dark:text-white text-base tracking-tight leading-none">Digital Store</span>
+                            <span className="text-[9px] font-extrabold text-amber-500 mt-1 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                Modo Kiosko
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Theme Switcher */}
+                <div className="px-4.5 py-2 mt-2.5">
+                    <div className="relative flex p-1 bg-slate-100 dark:bg-[#070a10] rounded-2xl border border-slate-200/50 dark:border-slate-800/80 select-none">
+                        <button
+                            type="button"
+                            onClick={() => setDarkMode(false)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                !darkMode ? 'text-[#1e293b]' : 'text-slate-455 hover:text-slate-200'
+                            }`}
+                        >
+                            {!darkMode && (
+                                <motion.div
+                                    layoutId="theme-active-pill"
+                                    className="absolute inset-0 bg-white shadow-sm border border-slate-200/40 rounded-xl"
+                                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                />
+                            )}
+                            <Sun size={12} className="relative z-10 text-amber-500 animate-pulse" />
+                            <span className="relative z-10">Claro</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDarkMode(true)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                darkMode ? 'text-white' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                        >
+                            {darkMode && (
+                                <motion.div
+                                    layoutId="theme-active-pill"
+                                    className="absolute inset-0 bg-[#0c111e] shadow-sm border border-slate-800 rounded-xl"
+                                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                />
+                            )}
+                            <Moon size={12} className="relative z-10 text-blue-400" />
+                            <span className="relative z-10">Oscuro</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Categorized menu groups */}
+                <div className="flex flex-col gap-5 p-3.5 overflow-y-auto max-h-[75vh]">
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest px-4.5 mb-1.5 font-mono">Funciones</span>
+                        {renderNavItem('pos', 'Punto de Venta', ShoppingCart)}
+                        {renderNavItem('cajas', 'Mi Caja', Landmark)}
+                        {renderNavItem('historial_ventas', 'Mis Ventas de Hoy', Receipt)}
+                        {renderNavItem('productos', 'Ver Inventario', PackageSearch)}
+                        {renderNavItem('conteo_fisico', 'Conteo Físico', ClipboardCheck)}
+                    </div>
+                </div>
+            </div>
+
+            {/* User credentials log info and safe exit */}
+            <div className="p-3.5 border-t border-slate-100 dark:border-slate-850/60 bg-slate-50/50 dark:bg-black/15">
+                <div className="flex items-center gap-3 p-2 bg-white dark:bg-[#0c111e]/50 border border-slate-200/50 dark:border-slate-850/40 rounded-2xl shadow-xs">
+                    <div className="w-9 h-9 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-sm uppercase">
+                        {user?.username ? user.username.slice(0, 2) : 'OP'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-xs font-black text-slate-805 dark:text-white truncate uppercase">{user?.username || 'Invitado'}</p>
+                        <p className="text-[8.5px] font-extrabold text-amber-500 font-mono mt-0.5 uppercase tracking-wider">Cajero Kiosko</p>
+                    </div>
+                    <button 
+                        onClick={() => {
+                            const confirmClose = window.confirm("¿Seguro que deseas salir del terminal de caja fiscal?");
+                            if (confirmClose) {
+                                setView('inicio');
+                                setUser(null);
+                            }
+                        }} 
+                        className="w-8 h-8 rounded-xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/15 flex items-center justify-center text-rose-500 cursor-pointer transition hover:scale-105"
+                        title="Salir del Sistema"
+                    >
+                        <LogOut size={13} />
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     
     if (isInitializing) {
         return (
@@ -592,12 +709,12 @@ function AppLayout() {
             
             {/* Desktop persistent sidebar drawer */}
             <div className="hidden lg:block lg:w-[260px] h-full shrink-0">
-                {sidebarContent}
+                {isKioskLocked ? kioskSidebarContent : sidebarContent}
             </div>
 
             {/* Mobile Animated Dropdown Menu Panel (displayed downwards nicely) */}
             <AnimatePresence>
-                {mobileSidebarOpen && (
+                {!isKioskLocked && mobileSidebarOpen && (
                     <>
                         {/* Backdrop fade overlay */}
                         <motion.div 
@@ -660,7 +777,7 @@ function AppLayout() {
                                     {renderNavItem('productos', 'Productos', PackageSearch, 'view_inventory')}
                                     {renderNavItem('departamentos', 'Departamentos', Folder, 'view_inventory')}
                                     {renderNavItem('inventario', 'Inventario', ClipboardCheck, 'view_inventory')}
-                                    {renderNavItem('auditoria', 'Auditoría', History, 'view_inventory')}
+                                    
                                     {renderNavItem('devoluciones', 'Devoluciones', Undo2, 'view_inventory')}
                                 </motion.div>
 
@@ -769,7 +886,7 @@ function AppLayout() {
                 )}
 
                 {/* Mobile Top bar header */}
-                <header className="lg:hidden h-14 bg-white dark:bg-[#0c111e] border-b border-slate-200/60 dark:border-slate-850/40 px-4 flex items-center justify-between shrink-0 select-none z-[50] relative">
+                {!isKioskLocked && (<header className="lg:hidden h-14 bg-white dark:bg-[#0c111e] border-b border-slate-200/60 dark:border-slate-850/40 px-4 flex items-center justify-between shrink-0 select-none z-[50] relative">
                     <button 
                         onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
                         className="p-2 text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-xl cursor-pointer transition-colors duration-150 relative z-[60]"
@@ -821,17 +938,17 @@ function AppLayout() {
                             {darkMode ? <Sun size={14} className="text-yellow-400" /> : <Moon size={14} />}
                         </button>
                     </div>
-                </header>
+                </header>)}
 
                 {/* Main page view content display */}
-                <main className="flex-grow flex-1 overflow-hidden relative">
+                <main className={`flex-grow flex-1 overflow-hidden relative ${isKioskLocked ? 'pb-16 lg:pb-0' : ''}`}>
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={view}
-                            initial={{ opacity: 0, y: 28 }}
+                            initial={{ opacity: 0, y: 15 }}
                             animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -18 }}
-                            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }} // Elegant, fluid Apple-style spring ease-out
+                            exit={{ opacity: 0, y: -15 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
                             className="h-full w-full overflow-hidden"
                         >
                             {view === 'inicio' && <InicioView />}
@@ -840,18 +957,93 @@ function AppLayout() {
                             {view === 'historial_ventas' && hasPermission(user, 'view_sales') && <HistorialVentasView />}
                             {view === 'cuentas_por_cobrar' && hasPermission(user, 'manage_credits') && <CuentasPorCobrarView />}
                             {(view === 'productos' || view === 'inventario') && hasPermission(user, 'view_inventory') && <Inventory />}
-                            {view === 'auditoria' && hasPermission(user, 'view_inventory') && <AuditoriaView />}
+                            {view === 'auditoria' && hasPermission(user, 'view_audit') && <AuditoriaView />}
                             {view === 'departamentos' && hasPermission(user, 'view_inventory') && <DepartamentosView />}
                             {view === 'devoluciones' && hasPermission(user, 'view_inventory') && <DevolucionesView />}
                             {view === 'reportes' && hasPermission(user, 'view_reports') && <Dashboard />}
                             {view === 'analisis' && hasPermission(user, 'view_reports') && <AnalisisView />}
                             {view === 'usuarios' && user?.role === 'admin' && <PermissionsConsole />}
                             {view === 'cajas' && hasPermission(user, 'manage_caja') && <CajasView />}
+                            {view === 'conteo_fisico' && <PhysicalCountManager onClose={() => setView('pos')} />}
                             {view === 'configuraciones' && <ConfiguracionesView />}
                             {view === 'diagnostico' && <DiagnosticoView />}
                         </motion.div>
                     </AnimatePresence>
                 </main>
+
+                {/* Touch-optimized Bottom Navigation Bar for Kiosk Mobile */}
+                {isKioskLocked && (
+                    <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-[#0c111e] border-t border-slate-200/80 dark:border-slate-850/80 flex justify-around items-center z-50 px-2 shadow-2xl select-none">
+                        <button
+                            onClick={() => setView('pos')}
+                            className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors ${
+                                view === 'pos' 
+                                    ? 'text-blue-600 dark:text-[#38bdf8]' 
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-blue-500'
+                            }`}
+                        >
+                            <ShoppingCart size={18} />
+                            <span className="text-[9px] font-black uppercase tracking-wider">Ventas</span>
+                        </button>
+                        <button
+                            onClick={() => setView('cajas')}
+                            className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors ${
+                                view === 'cajas' 
+                                    ? 'text-blue-600 dark:text-[#38bdf8]' 
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-blue-500'
+                            }`}
+                        >
+                            <Landmark size={18} />
+                            <span className="text-[9px] font-black uppercase tracking-wider">Mi Caja</span>
+                        </button>
+                        <button
+                            onClick={() => setView('historial_ventas')}
+                            className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors ${
+                                view === 'historial_ventas' 
+                                    ? 'text-blue-600 dark:text-[#38bdf8]' 
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-blue-500'
+                            }`}
+                        >
+                            <Receipt size={18} />
+                            <span className="text-[9px] font-black uppercase tracking-wider">Historial</span>
+                        </button>
+                        <button
+                            onClick={() => setView('productos')}
+                            className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors ${
+                                view === 'productos' 
+                                    ? 'text-blue-600 dark:text-[#38bdf8]' 
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-blue-500'
+                            }`}
+                        >
+                            <PackageSearch size={18} />
+                            <span className="text-[9px] font-black uppercase tracking-wider">Stock</span>
+                        </button>
+                        <button
+                            onClick={() => setView('conteo_fisico')}
+                            className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors ${
+                                view === 'conteo_fisico' 
+                                    ? 'text-blue-600 dark:text-[#38bdf8]' 
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-blue-500'
+                            }`}
+                        >
+                            <ClipboardCheck size={18} />
+                            <span className="text-[9px] font-black uppercase tracking-wider">Conteo</span>
+                        </button>
+                        <button
+                            onClick={() => {
+                                const confirmClose = window.confirm("¿Seguro que deseas salir del terminal de caja fiscal?");
+                                if (confirmClose) {
+                                    setView('inicio');
+                                    setUser(null);
+                                }
+                            }}
+                            className="flex flex-col items-center justify-center gap-1 flex-1 py-1 text-rose-500 hover:text-rose-600 cursor-pointer"
+                        >
+                            <LogOut size={18} />
+                            <span className="text-[9px] font-black uppercase tracking-wider">Salir</span>
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Devices telemetry popup modal */}

@@ -681,23 +681,25 @@ export default function CajasView() {
               </div>
 
               {/* Acciones Rápidas de Ajuste */}
-              <div className="p-4 bg-slate-50/50 dark:bg-black/25 rounded-xl border border-slate-100 dark:border-slate-800/80 sm:col-span-2 flex flex-col justify-between gap-3">
-                <span className="text-[8.5px] font-black uppercase text-slate-400 tracking-wider">Movimiento de Caja Manual Auxiliar</span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleOpenAdjust('ingreso_manual')}
-                    className="flex-1 py-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 font-black text-[10px] uppercase rounded-lg transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <Plus size={11} /> Ingreso
-                  </button>
-                  <button
-                    onClick={() => handleOpenAdjust('retiro_manual')}
-                    className="flex-1 py-2 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/15 font-black text-[10px] uppercase rounded-lg transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <ArrowUpRight size={11} /> Retiro
-                  </button>
+              {isAdminOrPropietario && (
+                <div className="p-4 bg-slate-50/50 dark:bg-black/25 rounded-xl border border-slate-100 dark:border-slate-800/80 sm:col-span-2 flex flex-col justify-between gap-3">
+                  <span className="text-[8.5px] font-black uppercase text-slate-400 tracking-wider">Movimiento de Caja Manual Auxiliar</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleOpenAdjust('ingreso_manual')}
+                      className="flex-1 py-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 font-black text-[10px] uppercase rounded-lg transition flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={11} /> Ingreso
+                    </button>
+                    <button
+                      onClick={() => handleOpenAdjust('retiro_manual')}
+                      className="flex-1 py-2 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/15 font-black text-[10px] uppercase rounded-lg transition flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <ArrowUpRight size={11} /> Retiro
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Listado de movimientos de este vendedor */}
@@ -779,7 +781,7 @@ export default function CajasView() {
                 Cerrar Auditoría
               </button>
               
-              {selectedAccount.current_balance > 0 && (
+              {isAdminOrPropietario && selectedAccount.current_balance > 0 && (
                 <button 
                   onClick={handleOpenSettle}
                   className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-[10.5px] uppercase rounded-xl cursor-pointer shadow-md shadow-indigo-500/10 transition flex items-center gap-1.5"

@@ -80,6 +80,8 @@ export type ViewType = 'inicio' | 'pos' | 'ventas_pendientes' | 'historial_venta
 
 interface AppContextType {
     isInitializing: boolean;
+    kioskMode: boolean;
+    setKioskMode: (k: boolean) => void;
     user: User | null;
     setUser: (u: User | null) => void;
     darkMode: boolean;
@@ -148,6 +150,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isInitializing, setIsInitializing] = useState(true);
+    const [kioskMode, setKioskMode] = useState(() => localStorage.getItem('kioskMode') === 'true');
     const [isOffline, setIsOffline] = useState(() => !window.navigator.onLine);
     const [isSyncing, setIsSyncing] = useState(false);
 
@@ -639,16 +642,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [rgbSettings]);
 
     useEffect(() => {
-        Promise.all([
-            fetchProducts(),
-            fetchClients(),
-            fetchExchangeRate(),
-            fetchReceiptTemplate(),
-            fetchDepartments()
-        ]).finally(() => {
-            setTimeout(() => setIsInitializing(false), 800); // Elegant small delay for animation
-        });
-    }, []);
+        if (user && user.username && user.username !== 'none') {
+            setIsInitializing(true);
+            Promise.all([
+                fetchProducts(),
+                fetchClients(),
+                fetchExchangeRate(),
+                fetchReceiptTemplate(),
+                fetchDepartments(),
+                fetchKioskMode()
+            ]).finally(() => {
+                setTimeout(() => setIsInitializing(false), 800); // Elegant small delay for animation
+            });
+        } else {
+            setIsInitializing(false);
+        }
+    }, [user?.id, user?.username]);
+
+    const fetchKioskMode = async () => {
+        try {
+            const res = await fetchWithRetry('/api/settings/kiosk');
+            if (res.ok) {
+                const data = await res.json();
+                setKioskMode(data.kiosk_mode);
+                localStorage.setItem('kioskMode', String(data.kiosk_mode));
+            }
+        } catch (e) {
+            console.warn("Failed to fetch kiosk mode:", e);
+        }
+    };
 
     const fetchReceiptTemplate = async () => {
         try {
@@ -927,6 +949,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     };
 
+    
+    // Global WebSocket connection for settings/alerts
+    useEffect(() => {
+        if (!user || user.username === 'none') return;
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/alerts`;
+        
+        let socket = null;
+        let reconnectTimeout = null;
+
+        const connect = () => {
+            socket = new WebSocket(wsUrl);
+
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'kiosk_mode_changed') {
+                        setKioskMode(data.kiosk_mode);
+                        localStorage.setItem('kioskMode', String(data.kiosk_mode));
+                        window.dispatchEvent(new CustomEvent('triggerNotification', {
+                            detail: {
+                                message: data.kiosk_mode
+                                    ? "✓ Modo Quiosco ha sido activado por el administrador."
+                                    : "✓ Modo Quiosco ha sido desactivado.",
+                                type: 'info'
+                            }
+                        }));
+                    }
+                } catch (err) { }
+            };
+
+            socket.onclose = () => {
+                reconnectTimeout = setTimeout(connect, 10000);
+            };
+
+            socket.onerror = () => {};
+        };
+
+        connect();
+
+        return () => {
+            if (socket) socket.close();
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        };
+    }, [user?.id, user?.username]);
+
+
     // Auto trigger sync when the system transitions to online
     useEffect(() => {
         if (!isOffline && navigator.onLine) {
@@ -941,6 +1011,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setUser,
             darkMode,
             setDarkMode,
+            kioskMode,
+            setKioskMode: async (k) => { 
+                setKioskMode(k); 
+                localStorage.setItem('kioskMode', String(k)); 
+                try {
+                    await fetch('/api/settings/kiosk', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ kiosk_mode: k })
+                    });
+                } catch (e) {
+                    console.error("Error saving kiosk mode to server", e);
+                }
+            },
             cart,
             addToCart,
             updateCartItemQuantity,

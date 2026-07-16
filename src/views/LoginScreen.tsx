@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
     Lock, Eye, EyeOff, Sparkles, ShieldAlert, 
-    RefreshCw, UserCheck, KeySquare 
+    RefreshCw, UserCheck, KeySquare, Store
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
@@ -64,15 +64,15 @@ export default function LoginScreen() {
             >
                 {/* Brand Identity */}
                 <div className="flex flex-col items-center text-center gap-3 mb-7">
-                    <div className="w-13 h-13 rounded-2xl bg-indigo-650 flex items-center justify-center text-white shadow-xl shadow-indigo-650/15">
-                        <Sparkles size={25} className="animate-pulse text-indigo-100" />
+                    <div className="w-13 h-13 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-xl shadow-indigo-600/15">
+                        <Store size={25} className="animate-pulse text-indigo-100" />
                     </div>
                     <div>
                         <h2 className="font-sans font-black text-2xl tracking-tight text-slate-850 dark:text-white leading-tight uppercase">
-                            GTR POS TERMINAL
+                            DIGITAL STORE
                         </h2>
                         <p className="text-[10px] uppercase font-black tracking-widest text-[#6366f1] mt-1 pr-0.5">
-                            Seguridad del Sistema & Control de Acceso
+                            Sistema POS & Control de Acceso
                         </p>
                     </div>
                 </div>

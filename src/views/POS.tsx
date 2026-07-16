@@ -2876,7 +2876,7 @@ export default function POS() {
 
                                     <div className="p-3 bg-indigo-50/20 dark:bg-indigo-950/20 rounded-xl border border-indigo-505/10">
                                         <span className="text-[9px] text-indigo-500 font-extrabold uppercase tracking-widest block mb-1">Precios en POS</span>
-                                        <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+                                        <div className={`grid ${user?.role === 'admin' ? 'grid-cols-3' : 'grid-cols-2'} gap-2 text-center text-[10px] font-bold`}>
                                             <div className="p-2 bg-white/60 dark:bg-black/20 rounded-lg">
                                                 <span className="text-[8px] text-slate-450 uppercase tracking-widest block">Unitario</span>
                                                 <span className="text-indigo-600 dark:text-indigo-400">Bs. {roundBs(sideDetailProduct.price_unit * exchangeRate).toFixed(2)}</span>
@@ -2885,10 +2885,12 @@ export default function POS() {
                                                 <span className="text-[8px] text-slate-455 uppercase tracking-widest block">Mayorista</span>
                                                 <span className="text-slate-600 dark:text-slate-300">Bs. {roundBs(sideDetailProduct.price_bulk * exchangeRate).toFixed(2)}</span>
                                             </div>
-                                            <div className="p-2 bg-white/60 dark:bg-black/20 rounded-lg">
-                                                <span className="text-[8px] text-slate-455 uppercase tracking-widest block">Costo</span>
-                                                <span className="text-slate-400 dark:text-slate-500">Bs. {roundBs(sideDetailProduct.price_cost * exchangeRate).toFixed(2)}</span>
-                                            </div>
+                                            {user?.role === 'admin' && (
+                                                <div className="p-2 bg-white/60 dark:bg-black/20 rounded-lg">
+                                                    <span className="text-[8px] text-slate-455 uppercase tracking-widest block">Costo</span>
+                                                    <span className="text-slate-400 dark:text-slate-500">Bs. {roundBs(sideDetailProduct.price_cost * exchangeRate).toFixed(2)}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
