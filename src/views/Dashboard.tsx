@@ -40,7 +40,8 @@ export default function Dashboard() {
         lowStock: [] as any[],
         topProducts: [] as any[],
         salesTrend: [] as any[],
-        paymentDistribution: [] as any[]
+        paymentDistribution: [] as any[],
+        hourlySales: [] as any[]
     });
 
     const [loading, setLoading] = useState(true);

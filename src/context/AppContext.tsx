@@ -1,3 +1,4 @@
+import { safeDispatchEvent } from "../utils/events";
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, CartItem, Product, Client, ReceiptTemplate, Department, SaleTab, RgbThemeSettings } from '../types';
 import { normalizePermissions } from '../utils/permissions';
@@ -786,9 +787,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 if (newQuantity > product.stock) {
                     newQuantity = product.stock;
                     setTimeout(() => {
-                        window.dispatchEvent(new CustomEvent('stockLimitHit', { 
+                        safeDispatchEvent('stockLimitHit', { 
                             detail: { name: product.name, stock: product.stock } 
-                        }));
+                        });
                     }, 0);
                 }
                 return prev.map(item => 
@@ -802,9 +803,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (finalQty > product.stock) {
                 finalQty = product.stock;
                 setTimeout(() => {
-                    window.dispatchEvent(new CustomEvent('stockLimitHit', { 
+                    safeDispatchEvent('stockLimitHit', { 
                         detail: { name: product.name, stock: product.stock } 
-                    }));
+                    });
                 }, 0);
             }
             if (finalQty <= 0) return prev;
@@ -823,9 +824,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     if (finalQty > item.stock) {
                         finalQty = item.stock;
                         setTimeout(() => {
-                            window.dispatchEvent(new CustomEvent('stockLimitHit', { 
+                            safeDispatchEvent('stockLimitHit', { 
                                 detail: { name: item.name, stock: item.stock } 
-                            }));
+                            });
                         }, 0);
                     }
                     return { ...item, cartQuantity: finalQty };
@@ -906,12 +907,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
 
             if (successCount > 0) {
-                window.dispatchEvent(new CustomEvent('triggerNotification', {
+                safeDispatchEvent('triggerNotification', {
                     detail: {
                         message: `✓ Sincronización automática: Se procesaron ${successCount} venta(s) registradas offline con éxito.`,
                         type: 'success'
                     }
-                }));
+                });
                 // Refresh local lists
                 await fetchProducts();
                 await fetchClients();
@@ -969,14 +970,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     if (data.type === 'kiosk_mode_changed') {
                         setKioskMode(data.kiosk_mode);
                         localStorage.setItem('kioskMode', String(data.kiosk_mode));
-                        window.dispatchEvent(new CustomEvent('triggerNotification', {
+                        safeDispatchEvent('triggerNotification', {
                             detail: {
                                 message: data.kiosk_mode
                                     ? "✓ Modo Quiosco ha sido activado por el administrador."
                                     : "✓ Modo Quiosco ha sido desactivado.",
                                 type: 'info'
                             }
-                        }));
+                        });
                     }
                 } catch (err) { }
             };

@@ -1,3 +1,4 @@
+import { createSafeCustomEvent } from "../utils/events";
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
@@ -235,7 +236,7 @@ export default function LowStockNotificationSystem() {
                                                     <button
                                                         onClick={() => {
                                                             // Dispatch custom event or fill search so user can check
-                                                            const customEvt = new CustomEvent('search-inventory-sku', { detail: p.sku });
+                                                            const customEvt = createSafeCustomEvent('search-inventory-sku', { detail: p.sku });
                                                             window.dispatchEvent(customEvt);
                                                         }}
                                                         className="py-1.5 px-3 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded-xl text-[9px] font-black uppercase tracking-wider transition cursor-pointer flex items-center gap-1"

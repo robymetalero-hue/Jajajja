@@ -1,3 +1,4 @@
+import { safeDispatchEvent, createSafeCustomEvent } from "../utils/events";
 import React, { useEffect, useState, useRef } from 'react';
 import { Mic, MicOff, Loader, Sparkles, Send, Volume2, Info, MessageSquare, X, Minus, Bot, VolumeX, Camera, Upload, Trash2, ShoppingBag, ShoppingCart, PlusCircle, Check, FileText, Copy } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -631,7 +632,7 @@ export default function AudioVoice() {
                 }]);
             }
         } else if (action === 'checkoutSale') {
-            const event = new CustomEvent('aiCheckout', { detail: { paymentMethod: payload.paymentMethod || 'Efectivo' } });
+            const event = createSafeCustomEvent('aiCheckout', { detail: { paymentMethod: payload.paymentMethod || 'Efectivo' } });
             window.dispatchEvent(event);
             const msgVal = `Procesando cobro por ${payload.paymentMethod || 'Efectivo'}...`;
             setTranscript(msgVal);
@@ -642,7 +643,7 @@ export default function AudioVoice() {
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }]);
         } else if (action === 'changeClientSelection') {
-            const event = new CustomEvent('aiClientChange', { detail: { name: payload.clientName, phone: payload.clientPhone || '' } });
+            const event = createSafeCustomEvent('aiClientChange', { detail: { name: payload.clientName, phone: payload.clientPhone || '' } });
             window.dispatchEvent(event);
             const msgVal = `Asociando cliente "${payload.clientName}" a la venta actual.`;
             setTranscript(msgVal);
@@ -653,7 +654,7 @@ export default function AudioVoice() {
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }]);
         } else if (action === 'applyDiscountCode') {
-            const event = new CustomEvent('aiApplyDiscount', { detail: { discount: payload.discount, discountType: payload.discountType } });
+            const event = createSafeCustomEvent('aiApplyDiscount', { detail: { discount: payload.discount, discountType: payload.discountType } });
             window.dispatchEvent(event);
             const msgVal = `Asignando descuento de ${payload.discount}${payload.discountType === 'porcentaje' ? '%' : '$'}.`;
             setTranscript(msgVal);
@@ -706,7 +707,7 @@ export default function AudioVoice() {
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }]);
         } else if (action === 'refreshUsers') {
-            window.dispatchEvent(new CustomEvent('aiUsersRefresh'));
+            safeDispatchEvent('aiUsersRefresh');
             const msgVal = "Lista de usuarios y personal sincronizados.";
             setTranscript(msgVal);
             setMessages(prev => [...prev, {
@@ -716,7 +717,7 @@ export default function AudioVoice() {
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }]);
         } else if (action === 'refreshReceivables') {
-            window.dispatchEvent(new CustomEvent('aiRefreshReceivables'));
+            safeDispatchEvent('aiRefreshReceivables');
             const msgVal = payload.message || "Cuentas y cobros de crédito actualizados.";
             setTranscript(msgVal);
             setMessages(prev => [...prev, {
@@ -1444,12 +1445,12 @@ export default function AudioVoice() {
                     handleAIAction(msg.action, msg.payload);
                 } else if (msg.type === 'app_update' || msg.type === 'app_push_update') {
                     // Dispatch custom event to force trigger update on AppLayout
-                    window.dispatchEvent(new CustomEvent('app-update-pushed', {
+                    safeDispatchEvent('app-update-pushed', {
                         detail: {
                             version: msg.version,
                             release_notes: msg.release_notes
                         }
-                    }));
+                    });
                 } else if (msg.type === 'audio') {
                     playAudioChunk(msg.audio);
                 } else if (msg.type === 'userTranscript') {

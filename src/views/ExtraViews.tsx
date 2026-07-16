@@ -2132,7 +2132,34 @@ export function AnalisisView() {
     const totalRevenue = sales.reduce((acc, s) => acc + s.total, 0);
     const averageTicket = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
+
+    // Aggregate sales by hour
+    const hourlySales = React.useMemo(() => {
+        const groups: { [key: string]: number } = {};
+        for (let i = 0; i < 24; i++) {
+            groups[i.toString().padStart(2, '0')] = 0;
+        }
+        sales.forEach(s => {
+            if (s.created_at) {
+                let hour = '';
+                if (s.created_at.includes('T')) {
+                    hour = s.created_at.split('T')[1].split(':')[0];
+                } else if (s.created_at.includes(' ')) {
+                    hour = s.created_at.split(' ')[1].split(':')[0];
+                }
+                if (hour) {
+                    groups[hour] = (groups[hour] || 0) + s.total;
+                }
+            }
+        });
+        return Object.keys(groups).sort().map(hour => ({
+            hour,
+            total: parseFloat(groups[hour].toFixed(2))
+        }));
+    }, [sales]);
+
     // Aggregate sales chronologically by day
+
     const salesByDay = React.useMemo(() => {
         const groups: { [key: string]: number } = {};
         sales.forEach(s => {
@@ -2335,6 +2362,26 @@ export function AnalisisView() {
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            
+            {/* 3. Hourly Sales Distribution (Peak Hours) */}
+            <div className="bg-white dark:bg-[#0c111e] rounded-3xl border border-slate-150 dark:border-slate-850 p-5 flex flex-col gap-4 shadow-sm mb-5">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 pb-2 border-b border-slate-50 dark:border-slate-850/60 block">Patrón de Ventas por Hora (Horas Pico)</span>
+                <div className="h-52 w-full mt-2">
+                    {hourlySales.length === 0 ? (
+                        <div className="text-center text-[10px] text-slate-400 uppercase font-bold tracking-wider flex items-center justify-center h-full">Sin datos registrados</div>
+                    ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={hourlySales} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                <XAxis dataKey="hour" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} tickFormatter={(val) => `${val}:00`} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+                                <RechartsTooltip contentStyle={{ borderRadius: '16px', background: '#0f172a', color: '#fff', border: 'none', fontSize: '11px', fontWeight: '700', fontFamily: 'monospace' }} formatter={(val: any) => [`Bs. ${Number(val).toFixed(2)}`, 'Ventas']} labelFormatter={(val) => `Hora: ${val}:00`} cursor={{fill: 'transparent'}} />
+                                <Bar dataKey="total" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    )}
                 </div>
             </div>
 

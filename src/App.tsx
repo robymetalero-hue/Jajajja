@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { safeDispatchEvent } from "./utils/events";
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { hasPermission } from './utils/permissions';
@@ -233,7 +234,7 @@ function AppLayout() {
     const [globalNotification, setGlobalNotification] = useState<{message: string; type: "success"|"error"|"warn"} | null>(null);
 
     
-    useEffect(() => {
+    useLayoutEffect(() => {
         const allowedKioskViews = ['pos', 'cajas', 'historial_ventas', 'productos', 'conteo_fisico'];
         if (isKioskLocked && !allowedKioskViews.includes(view)) {
             setView('pos');
@@ -419,7 +420,7 @@ function AppLayout() {
                     {hasPermission(user, 'access_ai') && (
                         <button 
                             onClick={() => {
-                                window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                                safeDispatchEvent('open-ai-quick-commands');
                             }}
                             className="w-8 h-8 rounded-full bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-550/15 cursor-pointer hover:scale-105 transition-all duration-200 shadow-sm"
                             title="Llamar a la IA"
@@ -548,7 +549,7 @@ function AppLayout() {
                 {hasPermission(user, 'access_ai') && (
                     <button 
                         onClick={() => {
-                            window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                            safeDispatchEvent('open-ai-quick-commands');
                         }}
                         className="w-full mt-2.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-750 hover:to-indigo-850 text-white border border-indigo-505/20 rounded-xl text-[9.5px] font-extrabold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-indigo-500/10"
                     >
@@ -848,7 +849,7 @@ function AppLayout() {
                                         <button 
                                             onClick={() => {
                                                 setMobileSidebarOpen(false);
-                                                window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                                                safeDispatchEvent('open-ai-quick-commands');
                                             }}
                                             className="w-full mt-2 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-850 text-white border border-indigo-505/20 rounded-xl text-[9.5px] font-extrabold uppercase transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-indigo-505/10"
                                         >
@@ -923,7 +924,7 @@ function AppLayout() {
                         {hasPermission(user, 'access_ai') && (
                             <button 
                                 onClick={() => {
-                                    window.dispatchEvent(new CustomEvent('open-ai-quick-commands'));
+                                    safeDispatchEvent('open-ai-quick-commands');
                                 }}
                                 className="w-9 h-9 rounded-full bg-slate-50 dark:bg-[#070b13] border dark:border-slate-800/80 flex items-center justify-center text-indigo-600 dark:text-indigo-400 cursor-pointer hover:scale-105 transition-all shadow-sm"
                                 title="Llamar a la IA"
