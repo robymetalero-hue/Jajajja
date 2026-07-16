@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
 import { TrendingUp, AlertTriangle, RefreshCw, BarChart2, ShieldAlert, DollarSign, Wallet, ArrowDownRight, Sparkles, BrainCircuit, Loader2, Clock } from 'lucide-react';
 import { 
@@ -7,6 +8,18 @@ import {
 } from 'recharts';
 import DateRangePicker, { DateRange } from '../components/DateRangePicker';
 import { backupDatabaseToDrive } from "../utils/driveBackup";
+
+
+const CardSkeleton = () => (
+    <div className="bg-white dark:bg-[#0c111e] p-6 rounded-[28px] border border-slate-200/60 dark:border-slate-850/40 shadow-xl shadow-slate-200/20 dark:shadow-slate-900/40 animate-pulse">
+        <div className="flex items-center justify-between mb-4">
+            <div className="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-2xl"></div>
+            <div className="w-8 h-8 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+        </div>
+        <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-1/2 mb-2"></div>
+        <div className="h-8 bg-slate-200 dark:bg-slate-800 rounded w-3/4"></div>
+    </div>
+);
 
 export default function Dashboard() {
     const { user, fetchProducts } = useAppContext();
@@ -196,7 +209,7 @@ export default function Dashboard() {
     };
 
     return (
-        <div className="p-5 md:p-6 overflow-y-auto h-full flex flex-col gap-6 relative select-none bg-[#f8fafc]/40 dark:bg-[#070a10]">
+        <div className="animate-in fade-in zoom-in-95 duration-500 p-5 md:p-6 overflow-y-auto h-full flex flex-col gap-6 relative select-none bg-[#f8fafc]/40 dark:bg-[#070a10]">
             
             {/* Embedded elegant banner notification */}
             {notification && (
@@ -328,15 +341,18 @@ export default function Dashboard() {
                                         </linearGradient>
                                     </defs>
                                     <Tooltip 
+                                        cursor={{ stroke: 'rgba(99, 102, 241, 0.2)', strokeWidth: 2, strokeDasharray: '4 4' }}
                                         contentStyle={{ 
-                                            borderRadius: '12px', 
-                                            background: '#0f172a', 
+                                            borderRadius: '16px', 
+                                            background: 'rgba(15, 23, 42, 0.95)', 
+                                            backdropFilter: 'blur(10px)',
                                             color: '#fff', 
-                                            border: 'none',
-                                            fontSize: '9px',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            fontSize: '11px',
                                             fontWeight: '700',
                                             fontFamily: 'monospace',
-                                            padding: '4px 8px'
+                                            padding: '8px 12px',
+                                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
                                         }}
                                         formatter={(value: any) => [`Bs. ${Number(value).toFixed(2)}`, 'Ventas']}
                                         labelFormatter={() => ''}
@@ -758,14 +774,17 @@ export default function Dashboard() {
                                             <Tooltip 
                                                 contentStyle={{ 
                                                     borderRadius: '16px', 
-                                                    background: '#0f172a', 
+                                                    background: 'rgba(15, 23, 42, 0.95)', 
+                                                    backdropFilter: 'blur(10px)',
                                                     color: '#fff', 
-                                                    border: 'none',
+                                                    border: '1px solid rgba(255,255,255,0.1)',
                                                     fontSize: '11px',
                                                     fontWeight: '700',
-                                                    fontFamily: 'monospace'
+                                                    fontFamily: 'monospace',
+                                                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
                                                 }}
                                                 formatter={(val: any) => [`Bs. ${Number(val).toFixed(2)}`, 'Total']}
+                                                itemStyle={{ color: '#fff' }}
                                             />
                                         </PieChart>
                                     </ResponsiveContainer>

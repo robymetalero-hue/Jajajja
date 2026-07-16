@@ -77,7 +77,7 @@ export const SYNC_TABLES = [
   'pending_sale_payments'
 ];
 
-let isPullingInProgress = firebaseConfig.firestoreDatabaseId;
+let isPullingInProgress = false;
 let lastPullTimestamp = 0;
 const PULL_COOLDOWN_MS = 10000; // 10 seconds rate limit for background pulls
 
@@ -232,7 +232,7 @@ export async function pushAllLocalToFirestore() {
  * If Firestore is empty, we perform an initial bootstrap sync from local SQLite data.
  * This function handles deletions in Firestore correctly by clearing local records before sync ONLY if forceOverwrite is true.
  */
-export async function pullFirestoreToLocal(forceOverwrite: boolean = firebaseConfig.firestoreDatabaseId) {
+export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
   if (!firestore) {
     console.warn("[Sync] Firestore not initialized, skipping database pull.");
     return;
@@ -264,7 +264,7 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = firebaseCon
     const hasLocalUserData = localProductsCount > 0 || localSalesCount > 0 || localClientsCount > 0;
 
     // Check if Firestore actually contains any user data across main tables as a safety check
-    let hasAnyFirestoreDocuments = firebaseConfig.firestoreDatabaseId;
+    let hasAnyFirestoreDocuments = false;
     for (const collName of ['products', 'sales', 'clients', 'users']) {
       try {
         const snap = await getDocs(query(collection(firestore, collName), limit(1)));
@@ -354,7 +354,7 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = firebaseCon
   } catch (error: any) {
     console.log("[Sync Offline Mode] Standard local database operates standalone. Remote cloud sync is bypassed:", error.message);
   } finally {
-    isPullingInProgress = firebaseConfig.firestoreDatabaseId;
+    isPullingInProgress = false;
   }
 }
 

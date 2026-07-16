@@ -22,7 +22,7 @@ import AudioVoice from './components/AudioVoice';
 import { 
     Menu, X, Home, ShoppingCart, Clock, Receipt, PackageSearch, 
     Folder, ClipboardCheck, Undo2, LayoutDashboard, TrendingUp, 
-    Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History
+    Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History, Loader2
 } from 'lucide-react';
 
 // Animated nav bar dynamic icons with custom physical micro-movements
@@ -221,7 +221,7 @@ function AppLayout() {
     const { 
         darkMode, setDarkMode, user, setUser, view, setView, isOffline, isSyncing, triggerOnlineSync,
         isAutonomousTesting, setIsAutonomousTesting, autonomousStep, setAutonomousStep, autonomousLogs, setAutonomousLogs,
-        products, pwaPrompt, installPWA, isPwaInstalled
+        products, pwaPrompt, installPWA, isPwaInstalled, isInitializing
     } = useAppContext();
     const lowStockCount = products ? products.filter(p => p.stock <= p.stock_alarm).length : 0;
     const [localWorkers, setLocalWorkers] = useState<any[]>([]);
@@ -325,40 +325,6 @@ function AppLayout() {
     if (!user || (user.role as string) === 'none' || user.username === 'none') {
         return <LoginScreen />;
     }
-
-    const handleUserRoleChange = (roleSelected: string) => {
-        if (roleSelected === 'admin') {
-            const adminValue = {
-                id: 1,
-                username: "roby",
-                role: "admin" as const,
-                permissions: { view_reports: true, edit_prices: true, view_inventory: true, view_sales: true }
-            };
-            setUser(adminValue);
-            localStorage.setItem('user', JSON.stringify(adminValue));
-        } else {
-            const found = localWorkers.find(w => w.username === roleSelected);
-            if (found) {
-                const workerValue = {
-                    id: found.id,
-                    username: found.username,
-                    role: "trabajador" as const,
-                    permissions: found.permissions
-                };
-                setUser(workerValue);
-                localStorage.setItem('user', JSON.stringify(workerValue));
-            } else {
-                const fallbackWorker = {
-                    id: 99,
-                    username: "trabajador_demo",
-                    role: "trabajador" as const,
-                    permissions: { view_reports: false, edit_prices: false, view_inventory: true, view_sales: true }
-                };
-                setUser(fallbackWorker);
-                localStorage.setItem('user', JSON.stringify(fallbackWorker));
-            }
-        }
-    };
 
     // Helper to render nav items with identical styles
     const renderNavItem = (targetView: any, label: string, Icon: any, gatePermissionKey?: string) => {
@@ -536,20 +502,8 @@ function AppLayout() {
                         </span>
                     </div>
                     
-                    {/* Fast switcher to toggle roles or profiles of trabajadores smoothly inside UI */}
-                    <div className="flex items-center gap-1 cursor-pointer" title="Cambiar Operario">
-                        <select 
-                            className="bg-transparent text-[10px] text-slate-400 hover:text-slate-600 font-bold focus:outline-none w-6 cursor-pointer"
-                            onChange={e => handleUserRoleChange(e.target.value)}
-                            value={user?.username || "admin"}
-                        >
-                            <option value="admin">Admin</option>
-                            {localWorkers.map(w => (
-                                <option key={w.username} value={w.username}>@{w.username}</option>
-                            ))}
-                        </select>
+                    
                     </div>
-                </div>
 
                 {/* Profile actions row */}
                 <div className="grid grid-cols-2 gap-2 mt-1">
@@ -596,6 +550,42 @@ function AppLayout() {
             </div>
         </div>
     );
+
+    
+    if (isInitializing) {
+        return (
+            <div className="fixed inset-0 bg-[#f8fafc] dark:bg-[#070a10] z-[9999] flex flex-col items-center justify-center">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, ease: "easeOut" }}
+                    className="flex flex-col items-center gap-6"
+                >
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-indigo-500 blur-xl opacity-30 rounded-full"></div>
+                        <div className="w-16 h-16 rounded-3xl bg-indigo-600 flex items-center justify-center shadow-2xl relative z-10 border border-indigo-500/50">
+                            <span className="text-white font-black text-2xl font-mono tracking-tighter">GTR</span>
+                        </div>
+                    </div>
+                    <div className="flex flex-col items-center gap-2 text-center">
+                        <h2 className="text-slate-800 dark:text-slate-200 font-extrabold text-xl tracking-tight uppercase">Inicializando Entorno</h2>
+                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-widest">
+                            <Loader2 size={14} className="animate-spin text-indigo-500" />
+                            <span>Cargando datos maestros</span>
+                        </div>
+                    </div>
+                    <div className="w-48 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mt-2 overflow-hidden">
+                        <motion.div 
+                            initial={{ x: "-100%" }}
+                            animate={{ x: "100%" }}
+                            transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+                            className="h-full bg-indigo-500 w-1/2 rounded-full"
+                        />
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
 
     return (
         <div className={`flex h-screen w-full select-none ${darkMode ? 'dark bg-[#070a10] text-[#cacfd2]' : 'bg-neutral-50/40 text-slate-900'}`}>
@@ -709,16 +699,7 @@ function AppLayout() {
                                             </div>
                                         </div>
                                         
-                                        <select 
-                                            className="bg-transparent text-[10px] text-slate-400 hover:text-slate-600 font-bold focus:outline-none cursor-pointer"
-                                            onChange={e => handleUserRoleChange(e.target.value)}
-                                            value={user?.username || "admin"}
-                                        >
-                                            <option value="admin">Admin</option>
-                                            {localWorkers.map(w => (
-                                                <option key={w.username} value={w.username}>@{w.username}</option>
-                                            ))}
-                                        </select>
+                                        
                                     </div>
                                     
                                     <div className="grid grid-cols-2 gap-2 text-[9px]">

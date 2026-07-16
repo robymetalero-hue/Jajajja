@@ -79,6 +79,7 @@ testConnection();
 export type ViewType = 'inicio' | 'pos' | 'ventas_pendientes' | 'historial_ventas' | 'productos' | 'departamentos' | 'inventario' | 'auditoria' | 'devoluciones' | 'reportes' | 'analisis' | 'usuarios' | 'configuraciones' | 'cajas';
 
 interface AppContextType {
+    isInitializing: boolean;
     user: User | null;
     setUser: (u: User | null) => void;
     darkMode: boolean;
@@ -146,6 +147,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [isInitializing, setIsInitializing] = useState(true);
     const [isOffline, setIsOffline] = useState(() => !window.navigator.onLine);
     const [isSyncing, setIsSyncing] = useState(false);
 
@@ -637,11 +639,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [rgbSettings]);
 
     useEffect(() => {
-        fetchProducts();
-        fetchClients();
-        fetchExchangeRate();
-        fetchReceiptTemplate();
-        fetchDepartments();
+        Promise.all([
+            fetchProducts(),
+            fetchClients(),
+            fetchExchangeRate(),
+            fetchReceiptTemplate(),
+            fetchDepartments()
+        ]).finally(() => {
+            setTimeout(() => setIsInitializing(false), 800); // Elegant small delay for animation
+        });
     }, []);
 
     const fetchReceiptTemplate = async () => {
@@ -930,6 +936,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return (
         <AppContext.Provider value={{
+            isInitializing,
             user,
             setUser,
             darkMode,
