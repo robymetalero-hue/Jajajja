@@ -285,26 +285,6 @@ try {
 } catch (e: any) {}
 
 try {
-  db.exec("ALTER TABLE sale_items ADD COLUMN product_name_snapshot TEXT DEFAULT NULL");
-} catch (e: any) {}
-
-try {
-  db.exec("ALTER TABLE sale_items ADD COLUMN product_sku_snapshot TEXT DEFAULT NULL");
-} catch (e: any) {}
-
-try {
-  db.exec("ALTER TABLE sale_items ADD COLUMN price_type TEXT DEFAULT NULL");
-} catch (e: any) {}
-
-try {
-  db.exec("ALTER TABLE sale_items ADD COLUMN discount_minor REAL DEFAULT NULL");
-} catch (e: any) {}
-
-try {
-  db.exec("ALTER TABLE sale_items ADD COLUMN subtotal_minor REAL DEFAULT NULL");
-} catch (e: any) {}
-
-try {
   db.exec("ALTER TABLE sales ADD COLUMN notes TEXT DEFAULT NULL");
 } catch (e: any) {}
 

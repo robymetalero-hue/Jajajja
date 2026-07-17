@@ -4170,7 +4170,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   // Actualizar la cantidad física de un ítem individual
   app.put("/api/inventory-counts/:id/items/:itemId", (req, res) => {
     const { id, itemId } = req.params;
-    const { physical_quantity, notes } = req.body;
+    const { physical_quantity, notes, status: bodyStatus } = req.body;
     try {
       const count = db.prepare('SELECT status FROM inventory_counts WHERE id = ?').get(id) as any;
       if (!count || (count.status !== 'en_progreso' && count.status !== 'pausado')) {
@@ -4185,7 +4185,11 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const expected = item.expected_quantity;
       const physical = Math.max(0, Number(physical_quantity));
       const difference = physical - expected;
-      const status = difference === 0 ? 'correcto' : 'diferencia';
+      
+      let status = difference === 0 ? 'correcto' : 'diferencia';
+      if (bodyStatus) {
+        status = bodyStatus;
+      }
 
       db.prepare(`
         UPDATE inventory_count_items
@@ -4255,7 +4259,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         return res.status(400).json({ error: "Solo se pueden aprobar conteos que estén finalizados por el vendedor." });
       }
 
-      const items = db.prepare('SELECT * FROM inventory_count_items WHERE inventory_count_id = ?').all() as any[];
+      const items = db.prepare('SELECT * FROM inventory_count_items WHERE inventory_count_id = ?').all(id) as any[];
       
       const transaction = db.transaction(() => {
         // Apply stock adjustment to products where difference is non-zero
