@@ -4390,7 +4390,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         return res.status(404).json({ error: "Cuenta de caja no encontrada." });
       }
 
-      const pendingMovements = db.prepare("SELECT * FROM cash_movements WHERE seller_id = ? AND status = 'pendiente'").all() as any[];
+      const pendingMovements = db.prepare("SELECT * FROM cash_movements WHERE seller_id = ? AND status = 'pendiente'").all(sellerId) as any[];
       if (pendingMovements.length === 0 && sellerAcc.current_balance === 0) {
         return res.status(400).json({ error: "La caja de este vendedor ya se encuentra liquidada en cero sin movimientos pendientes." });
       }

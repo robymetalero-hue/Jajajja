@@ -145,6 +145,7 @@ interface AppContextType {
     setPwaPrompt: (prompt: any) => void;
     installPWA: () => Promise<void>;
     isPwaInstalled: boolean;
+    showNotification?: (message: string, type?: 'success' | 'error' | 'warn' | 'info') => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -1005,6 +1006,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [isOffline]);
 
+    const showNotification = (message: string, type: 'success' | 'error' | 'warn' | 'info' = 'success') => {
+        safeDispatchEvent('triggerNotification', {
+            detail: { message, type }
+        });
+    };
+
     return (
         <AppContext.Provider value={{
             isInitializing,
@@ -1079,7 +1086,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             pwaPrompt,
             setPwaPrompt,
             installPWA,
-            isPwaInstalled
+            isPwaInstalled,
+            showNotification
         }}>
             {children}
         </AppContext.Provider>
