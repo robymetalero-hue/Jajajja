@@ -273,13 +273,13 @@ export default function CajasView() {
     movements.forEach(m => {
       if (m.status === 'pendiente') {
         const method = m.payment_method || 'Efectivo';
-        const amt = m.amount;
-        totalPending += amt;
+        const amtInBs = m.currency === 'USD' ? (m.amount * (exchangeRate || 6.96)) : m.amount;
+        totalPending += amtInBs;
 
         if (totals[method] !== undefined) {
-          totals[method] += amt;
+          totals[method] += amtInBs;
         } else {
-          totals['Otros'] += amt;
+          totals['Otros'] += amtInBs;
         }
       }
     });
@@ -378,9 +378,24 @@ export default function CajasView() {
                   </p>
                 </div>
 
-                <div className="pt-4 border-t border-white/15 text-[10px] text-indigo-200 font-bold flex justify-between">
-                  <span>Ventas vigentes sin liquidar:</span>
-                  <span className="font-mono font-black text-white">{movements.filter(m => m.type === 'venta' && m.status === 'pendiente').length} tickets</span>
+                <div className="pt-4 border-t border-white/15 text-[10px] text-indigo-200 font-bold flex flex-col gap-3">
+                  <div className="flex justify-between">
+                    <span>Ventas vigentes sin liquidar:</span>
+                    <span className="font-mono font-black text-white">{movements.filter(m => m.type === 'venta' && m.status === 'pendiente').length} tickets</span>
+                  </div>
+                  {hasPermission(user, 'reset_own_cash') ? (
+                    <button
+                      onClick={handleOpenSettle}
+                      className="w-full mt-2 py-2.5 bg-white text-indigo-700 hover:bg-indigo-50 font-black text-[10px] uppercase rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                    >
+                      <CheckCircle2 size={13} />
+                      Auto-Liquidar & Resetear mi Caja
+                    </button>
+                  ) : (
+                    <div className="text-center text-[9px] text-indigo-200 bg-white/10 p-2 rounded-lg leading-snug font-medium">
+                      * El administrador debe realizar tu arqueo físico de caja para resetear tu saldo a cero.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -781,7 +796,7 @@ export default function CajasView() {
                 Cerrar Auditoría
               </button>
               
-              {isAdminOrPropietario && selectedAccount.current_balance > 0 && (
+              {isAdminOrPropietario && (selectedAccount.current_balance !== 0 || movements.some(m => m.status === 'pendiente')) && (
                 <button 
                   onClick={handleOpenSettle}
                   className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-[10.5px] uppercase rounded-xl cursor-pointer shadow-md shadow-indigo-500/10 transition flex items-center gap-1.5"

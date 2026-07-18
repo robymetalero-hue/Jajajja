@@ -1953,8 +1953,29 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       }
 
       if (category && category !== 'todos') {
-        conditions.push(`category = ?`);
-        params.push(category);
+        const catLower = category.toLowerCase();
+        if (catLower === 'autenticacion') {
+          conditions.push(`(LOWER(category) IN ('autenticacion', 'authentication', 'security', 'seguridad'))`);
+        } else if (catLower === 'usuarios') {
+          conditions.push(`(LOWER(category) IN ('usuarios', 'users', 'roles', 'permissions', 'permisos'))`);
+        } else if (catLower === 'productos') {
+          conditions.push(`(LOWER(category) IN ('productos', 'products'))`);
+        } else if (catLower === 'precios') {
+          conditions.push(`(LOWER(category) IN ('precios', 'pricing'))`);
+        } else if (catLower === 'inventario') {
+          conditions.push(`(LOWER(category) IN ('inventario', 'inventory', 'inventory_count'))`);
+        } else if (catLower === 'ventas') {
+          conditions.push(`(LOWER(category) IN ('ventas', 'sales', 'returns', 'devoluciones'))`);
+        } else if (catLower === 'caja') {
+          conditions.push(`(LOWER(category) IN ('caja', 'cash', 'cash_settlement'))`);
+        } else if (catLower === 'configuracion') {
+          conditions.push(`(LOWER(category) IN ('configuracion', 'configuration', 'exchange_rate'))`);
+        } else if (catLower === 'error') {
+          conditions.push(`(LOWER(category) IN ('error', 'system_error'))`);
+        } else {
+          conditions.push(`LOWER(category) = ?`);
+          params.push(catLower);
+        }
       }
 
       if (severity && severity !== 'todos') {
@@ -2663,12 +2684,24 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   app.post("/api/sales", enforcePermission('create_sales'), (req, res) => {
     const { total, discount, payment_method, user_id, client_id, items, initial_abono, due_date, redeemed_points, currency, exchange_rate, notes } = req.body;
+    const clientOpId = req.body.clientOperationId || req.body.client_operation_id || null;
+
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "No se puede procesar una venta sin artículos de compra en el carrito." });
     }
     if (payment_method === 'Crédito' && !client_id) {
       return res.status(400).json({ error: "Se requiere registrar o seleccionar un cliente para compras al crédito / cuentas por cobrar." });
     }
+
+    if (clientOpId) {
+      // Check if a sale with this client_operation_id has already been successfully recorded
+      const existingSale = db.prepare('SELECT id FROM sales WHERE client_operation_id = ?').get(clientOpId) as any;
+      if (existingSale) {
+        console.log(`[Idempotency] Sale already processed for clientOperationId: ${clientOpId}. Returning existing sale ID: ${existingSale.id}`);
+        return res.json({ success: true, saleId: existingSale.id, isDuplicate: true });
+      }
+    }
+
     const safeTotal = Math.max(0, Number(total || 0));
     const safeDiscount = Math.max(0, Number(discount || 0));
     const safeCurrency = currency || 'BOB';
@@ -2676,13 +2709,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const rateRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('exchange_rate') as any;
       const currentRate = (exchange_rate !== undefined && exchange_rate !== null) ? Number(exchange_rate) : (rateRow ? parseFloat(rateRow.value) : 6.96);
 
-      const saleInsert = db.prepare('INSERT INTO sales (total, discount, payment_method, user_id, client_id, exchange_rate, currency, cierre_id, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)');
+      const saleInsert = db.prepare('INSERT INTO sales (total, discount, payment_method, user_id, client_id, exchange_rate, currency, cierre_id, notes, client_operation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)');
       const itemInsert = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, cost, product_name_snapshot, product_sku_snapshot, subtotal_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       const stockUpdate = db.prepare('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?');
       
       const auditPayloads: any[] = [];
       const transaction = db.transaction(() => {
-        const result = saleInsert.run(safeTotal, safeDiscount, payment_method || 'Efectivo', user_id || 1, client_id || null, currentRate, safeCurrency, notes || null, getBoliviaISOString());
+        const result = saleInsert.run(safeTotal, safeDiscount, payment_method || 'Efectivo', user_id || 1, client_id || null, currentRate, safeCurrency, notes || null, clientOpId, getBoliviaISOString());
         const saleId = result.lastInsertRowid;
         const itemIds: any[] = [];
         const productIds: any[] = [];
@@ -2985,7 +3018,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const newRemainingAmount = Math.max(0, remaining - actualPayment);
       const newStatus = newRemainingAmount <= 0 ? 'pagado' : 'pendiente';
 
-      const { paymentId } = db.transaction(() => {
+      const { paymentId, activeUserId } = db.transaction(() => {
         const result = db.prepare(`
           INSERT INTO credit_payments (account_receivable_id, amount, payment_method, user_id, notes)
           VALUES (?, ?, ?, ?, ?)
@@ -2997,12 +3030,43 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           WHERE id = ?
         `).run(newPaidAmount, newRemainingAmount, newStatus, id);
 
-        return { paymentId: result.lastInsertRowid };
+        const currentActiveUserId = Number(req.headers['x-user-id']) || Number(user_id) || 1;
+        const sellerRow = db.prepare('SELECT username FROM users WHERE id = ?').get(currentActiveUserId) as any;
+        const sName = sellerRow?.username || 'Cajero';
+
+        // Ensure seller's cash account exists
+        db.prepare(`
+          INSERT OR IGNORE INTO cash_accounts (seller_id, seller_username, current_balance)
+          VALUES (?, ?, 0.0)
+        `).run(currentActiveUserId, sName);
+
+        // Record the cash movement (pending settlement)
+        db.prepare(`
+          INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes)
+          VALUES (?, ?, 'ingreso_manual', ?, 'BOB', ?, 'pendiente', ?)
+        `).run(
+          currentActiveUserId,
+          record.sale_id,
+          actualPayment,
+          payment_method || 'Efectivo',
+          notes || `Abono a Cuenta por Cobrar de Venta #${record.sale_id}`
+        );
+
+        // Update seller's cash account balance
+        db.prepare(`
+          UPDATE cash_accounts
+          SET current_balance = current_balance + ?, updated_at = CURRENT_TIMESTAMP
+          WHERE seller_id = ?
+        `).run(actualPayment, currentActiveUserId);
+
+        return { paymentId: result.lastInsertRowid, activeUserId: currentActiveUserId };
       })();
 
       syncAfterWrite({
         accounts_receivable: [id],
-        credit_payments: [paymentId]
+        credit_payments: [paymentId],
+        cash_accounts: [activeUserId],
+        cash_movements: []
       });
       res.json({ success: true, actualPayment, newRemainingAmount, newStatus });
     } catch (e: any) {
@@ -4145,6 +4209,29 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       });
 
       const countId = transaction();
+
+      // Audit count start
+      try {
+        const auditUser = (req as any).auditUser || {};
+        insertSystemAuditLog({
+          eventType: 'INVENTORY_COUNT_STARTED',
+          category: 'INVENTORY_COUNT',
+          module: 'KIOSKO_CHKLST',
+          action: 'Inicio de Conteo Físico',
+          severity: 'info',
+          entityType: 'conteo_fisico',
+          entityId: countId,
+          entityName: `Sesión de control #${countId}`,
+          userId: user_id || auditUser.userId || 1,
+          userName: username || auditUser.userName || 'admin',
+          reason: notes || 'Conteo físico de inventario iniciado.',
+          afterData: { total_products: products.length, category_filter: category_filter || 'Todos' },
+          status: 'success'
+        });
+      } catch (auditErr: any) {
+        console.warn("[Audit Error] Failed to log count start:", auditErr.message);
+      }
+
       res.json({ success: true, countId });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4177,7 +4264,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         return res.status(400).json({ error: "No se puede modificar un conteo que ya ha sido cerrado o cancelado." });
       }
 
-      const item = db.prepare('SELECT expected_quantity FROM inventory_count_items WHERE id = ?').get(itemId) as any;
+      const item = db.prepare('SELECT product_id, product_name, expected_quantity FROM inventory_count_items WHERE id = ?').get(itemId) as any;
       if (!item) {
         return res.status(404).json({ error: "Artículo de conteo no encontrado." });
       }
@@ -4214,6 +4301,33 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         WHERE id = ?
       `).run(stats.reviewed || 0, stats.correct || 0, stats.diff || 0, id);
 
+      // Audit item reviewed
+      try {
+        const auditUser = (req as any).auditUser || {};
+        insertSystemAuditLog({
+          eventType: 'INVENTORY_COUNT_ITEM_REVIEWED',
+          category: 'INVENTORY_COUNT',
+          module: 'KIOSKO_CHKLST',
+          action: 'Revisión de Ítem de Conteo',
+          severity: 'info',
+          entityType: 'producto',
+          entityId: item.product_id,
+          entityName: item.product_name,
+          userId: auditUser.userId || 1,
+          userName: auditUser.userName || 'cajero',
+          userRole: auditUser.userRole || 'cajero',
+          quantityBefore: expected,
+          quantityChanged: difference,
+          quantityAfter: physical,
+          reason: notes || `Cantidad encontrada: ${physical} (Esperada: ${expected})`,
+          afterData: { physical_quantity: physical, difference, status, notes },
+          relatedProductId: item.product_id,
+          status: 'success'
+        });
+      } catch (auditErr: any) {
+        console.warn("[Audit Error] Failed to log count item review:", auditErr.message);
+      }
+
       res.json({ success: true, difference, status });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4243,6 +4357,40 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       updateData.push(id);
 
       db.prepare(`UPDATE inventory_counts SET ${query} WHERE id = ?`).run(...updateData);
+
+      // Audit status change
+      try {
+        const auditUser = (req as any).auditUser || {};
+        let eventType = 'INVENTORY_COUNT_UPDATED';
+        let action = 'Cambio de estado de conteo';
+        if (status === 'finalizado' || status === 'completado') {
+          eventType = 'INVENTORY_COUNT_COMPLETED';
+          action = 'Conteo físico completado';
+        } else if (status === 'cancelado') {
+          eventType = 'INVENTORY_COUNT_REJECTED';
+          action = 'Conteo físico cancelado';
+        }
+
+        insertSystemAuditLog({
+          eventType,
+          category: 'INVENTORY_COUNT',
+          module: 'KIOSKO_CHKLST',
+          action,
+          severity: status === 'cancelado' ? 'warning' : 'info',
+          entityType: 'conteo_fisico',
+          entityId: id,
+          entityName: `Sesión de control #${id}`,
+          userId: auditUser.userId || 1,
+          userName: auditUser.userName || 'cajero',
+          userRole: auditUser.userRole || 'cajero',
+          reason: notes || `Sesión de conteo físico cambiada a estado: ${status}`,
+          afterData: { status },
+          status: 'success'
+        });
+      } catch (auditErr: any) {
+        console.warn("[Audit Error] Failed to log count status change:", auditErr.message);
+      }
+
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4293,6 +4441,33 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
                 `Conciliación #${id}`, 
                 `Ajuste por control físico de inventario (De ${oldStock} a ${newStock} pz). Obs: ${notes || 'Conforme'}`
               );
+
+              // Add professional system audit log
+              try {
+                insertSystemAuditLog({
+                  eventType: 'INVENTORY_MANUAL_ADJUSTMENT',
+                  category: 'inventario',
+                  module: 'INVENTARIO',
+                  action: 'Ajuste de Inventario por Conciliación',
+                  severity: 'warning',
+                  entityType: 'producto',
+                  entityId: item.product_id,
+                  entityName: p.name,
+                  userId: admin_id || 1,
+                  userName: admin_username || 'admin',
+                  userRole: 'admin',
+                  quantityBefore: oldStock,
+                  quantityChanged: item.difference,
+                  quantityAfter: newStock,
+                  reason: `Ajuste por control físico conciliado en sesión #${id}. Obs: ${notes || 'Conforme'}`,
+                  beforeData: { stock: oldStock },
+                  afterData: { stock: newStock },
+                  relatedProductId: item.product_id,
+                  status: 'success'
+                });
+              } catch (auditErr: any) {
+                console.warn("[Audit Error] Failed to log adjustment:", auditErr.message);
+              }
             }
           }
         }
@@ -4303,6 +4478,28 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           SET status = 'cerrado', notes = ?
           WHERE id = ?
         `).run(notes || 'Conciliado y cerrado por administración.', id);
+
+        // Add overall count approval audit log
+        try {
+          insertSystemAuditLog({
+            eventType: 'INVENTORY_COUNT_APPROVED',
+            category: 'inventario',
+            module: 'INVENTARIO',
+            action: 'Aprobación de Diferencias de Conteo',
+            severity: 'critical',
+            entityType: 'conteo_fisico',
+            entityId: id,
+            entityName: `Sesión de control #${id}`,
+            userId: admin_id || 1,
+            userName: admin_username || 'admin',
+            userRole: 'admin',
+            reason: notes || 'Conteo conciliado y aprobado por administrador.',
+            afterData: { count_id: id, items_count: items.length },
+            status: 'success'
+          });
+        } catch (auditErr: any) {
+          console.warn("[Audit Error] Failed to log count approval:", auditErr.message);
+        }
       });
 
       transaction();
@@ -4378,10 +4575,24 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
     const sellerId = Number(req.params.sellerId);
     const { admin_id, admin_username, delivered_amount, notes } = req.body;
     
-    // Secure backend check: Only admin, administrador or propietario can settle cash balances
+    // Secure backend check: Only admin, administrador, propietario or seller with reset_own_cash permission can settle cash balances
     const userRole = req.headers['x-user-role'] || req.query.user_role;
-    if (userRole !== 'admin' && userRole !== 'administrador' && userRole !== 'propietario') {
-      return res.status(403).json({ error: "Acceso denegado: Solo el administrador o propietario puede realizar la liquidación y reseteo de caja." });
+    const userId = Number(req.headers['x-user-id'] || req.query.user_id);
+    const userPermissionsRaw = req.headers['x-user-permissions'];
+    let hasResetOwnPermission = false;
+    try {
+      if (userPermissionsRaw) {
+        const parsed = JSON.parse(userPermissionsRaw as string);
+        if (parsed?.reset_own_cash) {
+          hasResetOwnPermission = true;
+        }
+      }
+    } catch (e) {}
+
+    const isSelfSettle = String(userId) === String(sellerId) && hasResetOwnPermission;
+
+    if (userRole !== 'admin' && userRole !== 'administrador' && userRole !== 'propietario' && !isSelfSettle) {
+      return res.status(403).json({ error: "Acceso denegado: No tienes autorización para liquidar o resetear esta cuenta de caja." });
     }
 
     try {

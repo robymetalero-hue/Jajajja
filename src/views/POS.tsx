@@ -541,8 +541,18 @@ export default function POS() {
 
     // Core checkout parameters
     const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+    const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
+    const [clientOperationId, setClientOperationId] = useState<string>("");
     const [checkoutCurrency, setCheckoutCurrency] = useState<'BOB' | 'USD'>('BOB');
     const cashInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isCheckoutOpen) {
+            const opId = "op_" + Date.now() + "_" + Math.random().toString(36).substring(2, 11);
+            setClientOperationId(opId);
+            setIsCheckoutProcessing(false);
+        }
+    }, [isCheckoutOpen]);
 
     useEffect(() => {
         if (isCheckoutOpen) {
@@ -1120,156 +1130,170 @@ export default function POS() {
 
     const executeCheckout = async (methodToUse = paymentMethod) => {
         if (cart.length === 0) return;
+        if (isCheckoutProcessing) return;
 
         if (methodToUse === 'Crédito' && !clientName.trim()) {
             showNotification("⚠️ Se requiere registrar un cliente con Nombre para procesar ventas al Crédito.", "error");
             return;
         }
 
-        // Register client details if provided. By hitting POST /api/clients first, we retrieve/create clientId
-        let clientId: number | null = null;
-        if (clientName.trim() && navigator.onLine) {
-            try {
-                const clientRes = await fetch('/api/clients', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: clientName, phone: clientPhone })
-                });
-                if (clientRes.ok) {
-                    const clientData = await clientRes.json();
-                    clientId = clientData.id;
-                }
-            } catch (e) {
-                console.error("Client registration error:", e);
-            }
-        }
-
-        const salePayload = {
-            total: checkoutCurrency === 'USD' ? usdTotal : total,
-            discount: checkoutCurrency === 'USD' ? (discountValue + pointsRedeemedValue) / exchangeRate : (discountValue + pointsRedeemedValue),
-            payment_method: methodToUse,
-            user_id: user?.id || 1,
-            client_id: clientId,
-            items: cart.map(c => ({
-                product_id: c.id,
-                quantity: c.cartQuantity,
-                price: checkoutCurrency === 'USD' ? getCartItemPriceUSD(c) : getCartItemPriceBs(c)
-            })),
-            initial_abono: methodToUse === 'Crédito' ? initialAbono : 0,
-            due_date: methodToUse === 'Crédito' && dueDate ? dueDate : null,
-            redeemed_points: pointsRedeemedValue,
-            currency: checkoutCurrency,
-            exchange_rate: exchangeRate,
-            notes: checkoutDescription
-        };
-
-        const saveOffline = async () => {
-            try {
-                const offlineSale = await saveOfflineSale(salePayload, clientName, clientPhone);
-                const placeholderSaleId = offlineSale.id;
-                
-                generateTicketPDF(methodToUse, placeholderSaleId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, creditDestination, checkoutDescription);
-                
-                setReceiptConfirmation({
-                    saleId: placeholderSaleId,
-                    total: checkoutCurrency === 'USD' ? usdTotal : total,
-                    currency: checkoutCurrency,
-                    itemsCount: cart.reduce((acc, item) => acc + item.cartQuantity, 0),
-                    paymentMethod: methodToUse,
-                    items: [...cart],
-                    clientName,
-                    clientPhone,
-                    discountValue,
-                    discount,
-                    discountType,
-                    pointsRedeemedValue,
-                    subtotal,
-                    exchangeRate,
-                    cashReceived,
-                    destination: creditDestination
-                });
-
-                clearCart();
-                setDiscount(0);
-                setClientName("");
-                setClientPhone("");
-                setCreditDestination("");
-                setCheckoutDescription("");
-                setInitialAbono(0);
-                setDueDate("");
-                setCashReceived("");
-                setUsePoints(false);
-                setPaymentMethod('Efectivo');
-                setIsCheckoutOpen(false);
-                triggerVibrate([80, 50, 80]);
-                showNotification("⚠️ Modo offline activo: Venta guardada localmente en IndexedDB. Se sincronizará automáticamente al recuperar la conexión.", "success");
-            } catch (saveErr) {
-                triggerVibrate([150, 100, 150]);
-                console.error("Failed to save offline sale:", saveErr);
-                showNotification("Fallo grave al registrar la venta en la base de datos offline.", "error");
-            }
-        };
-
-        if (!navigator.onLine) {
-            await saveOffline();
-            return;
-        }
+        setIsCheckoutProcessing(true);
 
         try {
-            const res = await fetch('/api/sales', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(salePayload)
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const saleId = data.saleId;
-                
-                generateTicketPDF(methodToUse, saleId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, creditDestination, checkoutDescription);
-                
-                setReceiptConfirmation({
-                    saleId,
-                    total: checkoutCurrency === 'USD' ? usdTotal : total,
-                    currency: checkoutCurrency,
-                    itemsCount: cart.reduce((acc, item) => acc + item.cartQuantity, 0),
-                    paymentMethod: methodToUse,
-                    items: [...cart],
-                    clientName,
-                    clientPhone,
-                    discountValue,
-                    discount,
-                    discountType,
-                    pointsRedeemedValue,
-                    subtotal,
-                    exchangeRate,
-                    cashReceived,
-                    destination: creditDestination
-                });
-
-                clearCart();
-                setDiscount(0);
-                setClientName("");
-                setClientPhone("");
-                setCreditDestination("");
-                setCheckoutDescription("");
-                setInitialAbono(0);
-                setDueDate("");
-                setCashReceived("");
-                setUsePoints(false);
-                setPaymentMethod('Efectivo');
-                fetchProducts(); // update master stock list
-                fetchClients();  // update client list suggestions matching new addition
-                setIsCheckoutOpen(false);
-                triggerVibrate([80, 50, 80]);
-                showNotification("✓ Venta procesada y recibo térmico PDF descargado.", "success");
-            } else {
-                const errData = await res.json();
-                triggerVibrate([150, 100, 150]);
-                showNotification(`Error: ${errData.error}`, "error");
+            // Register client details if provided. By hitting POST /api/clients first, we retrieve/create clientId
+            let clientId: number | null = null;
+            if (clientName.trim() && navigator.onLine) {
+                try {
+                    const clientRes = await fetch('/api/clients', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: clientName, phone: clientPhone })
+                    });
+                    if (clientRes.ok) {
+                        const clientData = await clientRes.json();
+                        clientId = clientData.id;
+                    }
+                } catch (e) {
+                    console.error("Client registration error:", e);
+                }
             }
-        } catch (err) {
-            console.error("Checkout failure, saving offline:", err);
-            await saveOffline();
+
+            const opId = clientOperationId || ("op_" + Date.now() + "_" + Math.random().toString(36).substring(2, 11));
+
+            const salePayload = {
+                total: checkoutCurrency === 'USD' ? usdTotal : total,
+                discount: checkoutCurrency === 'USD' ? (discountValue + pointsRedeemedValue) / exchangeRate : (discountValue + pointsRedeemedValue),
+                payment_method: methodToUse,
+                user_id: user?.id || 1,
+                client_id: clientId,
+                items: cart.map(c => ({
+                    product_id: c.id,
+                    quantity: c.cartQuantity,
+                    price: checkoutCurrency === 'USD' ? getCartItemPriceUSD(c) : getCartItemPriceBs(c)
+                })),
+                initial_abono: methodToUse === 'Crédito' ? initialAbono : 0,
+                due_date: methodToUse === 'Crédito' && dueDate ? dueDate : null,
+                redeemed_points: pointsRedeemedValue,
+                currency: checkoutCurrency,
+                exchange_rate: exchangeRate,
+                notes: checkoutDescription,
+                clientOperationId: opId
+            };
+
+            const saveOffline = async () => {
+                try {
+                    const offlineSale = await saveOfflineSale(salePayload, clientName, clientPhone);
+                    const placeholderSaleId = offlineSale.id;
+                    
+                    generateTicketPDF(methodToUse, placeholderSaleId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, creditDestination, checkoutDescription);
+                    
+                    setReceiptConfirmation({
+                        saleId: placeholderSaleId,
+                        total: checkoutCurrency === 'USD' ? usdTotal : total,
+                        currency: checkoutCurrency,
+                        itemsCount: cart.reduce((acc, item) => acc + item.cartQuantity, 0),
+                        paymentMethod: methodToUse,
+                        items: [...cart],
+                        clientName,
+                        clientPhone,
+                        discountValue,
+                        discount,
+                        discountType,
+                        pointsRedeemedValue,
+                        subtotal,
+                        exchangeRate,
+                        cashReceived,
+                        destination: creditDestination
+                    });
+
+                    clearCart();
+                    setDiscount(0);
+                    setClientName("");
+                    setClientPhone("");
+                    setCreditDestination("");
+                    setCheckoutDescription("");
+                    setInitialAbono(0);
+                    setDueDate("");
+                    setCashReceived("");
+                    setUsePoints(false);
+                    setPaymentMethod('Efectivo');
+                    setIsCheckoutOpen(false);
+                    triggerVibrate([80, 50, 80]);
+                    showNotification("⚠️ Modo offline activo: Venta guardada localmente en IndexedDB. Se sincronizará automáticamente al recuperar la conexión.", "success");
+                } catch (saveErr) {
+                    triggerVibrate([150, 100, 150]);
+                    console.error("Failed to save offline sale:", saveErr);
+                    showNotification("Fallo grave al registrar la venta en la base de datos offline.", "error");
+                }
+            };
+
+            if (!navigator.onLine) {
+                await saveOffline();
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/sales', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(salePayload)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const saleId = data.saleId;
+                    
+                    generateTicketPDF(methodToUse, saleId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, creditDestination, checkoutDescription);
+                    
+                    setReceiptConfirmation({
+                        saleId,
+                        total: checkoutCurrency === 'USD' ? usdTotal : total,
+                        currency: checkoutCurrency,
+                        itemsCount: cart.reduce((acc, item) => acc + item.cartQuantity, 0),
+                        paymentMethod: methodToUse,
+                        items: [...cart],
+                        clientName,
+                        clientPhone,
+                        discountValue,
+                        discount,
+                        discountType,
+                        pointsRedeemedValue,
+                        subtotal,
+                        exchangeRate,
+                        cashReceived,
+                        destination: creditDestination
+                    });
+
+                    clearCart();
+                    setDiscount(0);
+                    setClientName("");
+                    setClientPhone("");
+                    setCreditDestination("");
+                    setCheckoutDescription("");
+                    setInitialAbono(0);
+                    setDueDate("");
+                    setCashReceived("");
+                    setUsePoints(false);
+                    setPaymentMethod('Efectivo');
+                    fetchProducts(); // update master stock list
+                    fetchClients();  // update client list suggestions matching new addition
+                    setIsCheckoutOpen(false);
+                    triggerVibrate([80, 50, 80]);
+                    if (data.isDuplicate) {
+                        showNotification("✓ Venta recuperada de transacción anterior (ya registrada). Recibo térmico PDF descargado.", "success");
+                    } else {
+                        showNotification("✓ Venta procesada y recibo térmico PDF descargado.", "success");
+                    }
+                } else {
+                    const errData = await res.json();
+                    triggerVibrate([150, 100, 150]);
+                    showNotification(`Error: ${errData.error}`, "error");
+                }
+            } catch (err) {
+                console.error("Checkout failure, saving offline:", err);
+                await saveOffline();
+            }
+        } finally {
+            setIsCheckoutProcessing(false);
         }
     };
 
@@ -3744,19 +3768,25 @@ export default function POS() {
                                             whileTap={{ scale: 0.98 }}
                                             onClick={() => executeCheckout(paymentMethod)}
                                             disabled={
+                                                isCheckoutProcessing ||
                                                 (paymentMethod === 'Crédito' && !clientName.trim()) ||
                                                 (paymentMethod === 'Efectivo' && cashReceived.trim() !== "" && (Number(cashReceived) - (checkoutCurrency === 'USD' ? usdTotal : total)) < 0)
                                             }
                                             className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition duration-150 cursor-pointer font-sans select-none border-none ${
-                                                ((paymentMethod === 'Crédito' && !clientName.trim()) ||
+                                                (isCheckoutProcessing ||
+                                                 (paymentMethod === 'Crédito' && !clientName.trim()) ||
                                                  (paymentMethod === 'Efectivo' && cashReceived.trim() !== "" && (Number(cashReceived) - (checkoutCurrency === 'USD' ? usdTotal : total)) < 0))
                                                     ? 'bg-slate-100 dark:bg-slate-850 text-slate-400 dark:text-slate-600 cursor-not-allowed shadow-none'
                                                     : 'gamer-rgb-glow text-white hover:shadow-xl shadow-md'
                                             }`}
                                         >
-                                            <Printer size={12} className="text-white" />
+                                            {isCheckoutProcessing ? (
+                                                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            ) : (
+                                                <Printer size={12} className="text-white" />
+                                            )}
                                             <span>
-                                                Cobrar & Imprimir Ticket ({checkoutCurrency === 'USD' ? `$ ${usdTotal.toFixed(2)} USD` : `${total.toFixed(2)} Bs.`})
+                                                {isCheckoutProcessing ? 'Procesando Venta...' : `Cobrar & Imprimir Ticket (${checkoutCurrency === 'USD' ? `$ ${usdTotal.toFixed(2)} USD` : `${total.toFixed(2)} Bs.`})`}
                                             </span>
                                         </motion.button>
                                         

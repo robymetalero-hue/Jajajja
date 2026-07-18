@@ -542,6 +542,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         themesToRemove.forEach(c => classes.remove(c));
         classes.add(`theme-${theme}`);
+        
+        if (theme === 'rgb') {
+            classes.add('gamer-rgb-glow');
+        } else {
+            classes.remove('gamer-rgb-glow');
+        }
     }, [theme]);
 
     useEffect(() => {

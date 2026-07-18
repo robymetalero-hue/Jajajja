@@ -223,8 +223,10 @@ function AppLayout() {
     const { 
         darkMode, setDarkMode, user, setUser, view, setView, isOffline, isSyncing, triggerOnlineSync,
         isAutonomousTesting, setIsAutonomousTesting, autonomousStep, setAutonomousStep, autonomousLogs, setAutonomousLogs,
-        products, pwaPrompt, installPWA, isPwaInstalled, isInitializing, kioskMode
+        products, pwaPrompt, installPWA, isPwaInstalled, isInitializing, kioskMode, theme, setTheme
     } = useAppContext();
+    
+    const isRgb = theme === 'rgb';
     
     const isKioskLocked = (kioskMode || (user && user.role === 'vendedor')) && user?.role !== 'admin' && user?.role !== 'propietario';
     const lowStockCount = products ? products.filter(p => p.stock <= p.stock_alarm).length : 0;
@@ -503,12 +505,15 @@ function AppLayout() {
                     <div className="relative flex p-1 bg-slate-100 dark:bg-[#070a10] rounded-2xl border border-slate-200/50 dark:border-slate-800/80 select-none">
                         <button
                             type="button"
-                            onClick={() => setDarkMode(false)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
-                                !darkMode ? 'text-[#1e293b]' : 'text-slate-455 hover:text-slate-200'
+                            onClick={() => {
+                                setDarkMode(false);
+                                if (theme === 'rgb') setTheme('emerald');
+                            }}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                !darkMode && theme !== 'rgb' ? 'text-[#1e293b]' : 'text-slate-455 hover:text-slate-200'
                             }`}
                         >
-                            {!darkMode && (
+                            {!darkMode && theme !== 'rgb' && (
                                 <motion.div
                                     layoutId="theme-active-pill"
                                     className="absolute inset-0 bg-white shadow-sm border border-slate-200/40 rounded-xl"
@@ -520,12 +525,15 @@ function AppLayout() {
                         </button>
                         <button
                             type="button"
-                            onClick={() => setDarkMode(true)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
-                                darkMode ? 'text-white' : 'text-slate-500 hover:text-slate-800'
+                            onClick={() => {
+                                setDarkMode(true);
+                                if (theme === 'rgb') setTheme('emerald');
+                            }}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                darkMode && theme !== 'rgb' ? 'text-white' : 'text-slate-500 hover:text-slate-800'
                             }`}
                         >
-                            {darkMode && (
+                            {darkMode && theme !== 'rgb' && (
                                 <motion.div
                                     layoutId="theme-active-pill"
                                     className="absolute inset-0 bg-[#0c111e] shadow-sm border border-slate-800 rounded-xl"
@@ -534,6 +542,26 @@ function AppLayout() {
                             )}
                             <Moon size={12} className="relative z-10 text-blue-400" />
                             <span className="relative z-10">Oscuro</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setTheme('rgb');
+                                setDarkMode(true);
+                            }}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                theme === 'rgb' ? 'text-white' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                        >
+                            {theme === 'rgb' && (
+                                <motion.div
+                                    layoutId="theme-active-pill"
+                                    className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-550 shadow-sm border border-pink-500 rounded-xl"
+                                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                />
+                            )}
+                            <Sparkles size={11} className="relative z-10 text-pink-400 animate-pulse" />
+                            <span className="relative z-10">RGB</span>
                         </button>
                     </div>
                 </div>
@@ -661,12 +689,15 @@ function AppLayout() {
                     <div className="relative flex p-1 bg-slate-100 dark:bg-[#070a10] rounded-2xl border border-slate-200/50 dark:border-slate-800/80 select-none">
                         <button
                             type="button"
-                            onClick={() => setDarkMode(false)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
-                                !darkMode ? 'text-[#1e293b]' : 'text-slate-455 hover:text-slate-200'
+                            onClick={() => {
+                                setDarkMode(false);
+                                if (theme === 'rgb') setTheme('emerald');
+                            }}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                !darkMode && theme !== 'rgb' ? 'text-[#1e293b]' : 'text-slate-455 hover:text-slate-200'
                             }`}
                         >
-                            {!darkMode && (
+                            {!darkMode && theme !== 'rgb' && (
                                 <motion.div
                                     layoutId="theme-active-pill"
                                     className="absolute inset-0 bg-white shadow-sm border border-slate-200/40 rounded-xl"
@@ -678,12 +709,15 @@ function AppLayout() {
                         </button>
                         <button
                             type="button"
-                            onClick={() => setDarkMode(true)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
-                                darkMode ? 'text-white' : 'text-slate-500 hover:text-slate-800'
+                            onClick={() => {
+                                setDarkMode(true);
+                                if (theme === 'rgb') setTheme('emerald');
+                            }}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                darkMode && theme !== 'rgb' ? 'text-white' : 'text-slate-500 hover:text-slate-800'
                             }`}
                         >
-                            {darkMode && (
+                            {darkMode && theme !== 'rgb' && (
                                 <motion.div
                                     layoutId="theme-active-pill"
                                     className="absolute inset-0 bg-[#0c111e] shadow-sm border border-slate-800 rounded-xl"
@@ -692,6 +726,26 @@ function AppLayout() {
                             )}
                             <Moon size={12} className="relative z-10 text-blue-400" />
                             <span className="relative z-10">Oscuro</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setTheme('rgb');
+                                setDarkMode(true);
+                            }}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer relative ${
+                                theme === 'rgb' ? 'text-white' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                        >
+                            {theme === 'rgb' && (
+                                <motion.div
+                                    layoutId="theme-active-pill"
+                                    className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-550 shadow-sm border border-pink-500 rounded-xl"
+                                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                />
+                            )}
+                            <Sparkles size={11} className="relative z-10 text-pink-400 animate-pulse" />
+                            <span className="relative z-10">RGB</span>
                         </button>
                     </div>
                 </div>

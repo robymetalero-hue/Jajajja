@@ -570,6 +570,9 @@ export default function AuditoriaView() {
                                     <option value="precios">Historial de Precios/Costos</option>
                                     <option value="inventario">Ajustes e Inventario</option>
                                     <option value="ventas">Ventas y Facturación</option>
+                                    <option value="caja">Cajas y Arqueos</option>
+                                    <option value="configuracion">Configuración del Sistema</option>
+                                    <option value="error">Errores y Alertas</option>
                                 </select>
                             </div>
 
@@ -1043,6 +1046,22 @@ export default function AuditoriaView() {
                                         <div className="bg-slate-50 dark:bg-[#070c14] border border-slate-200/60 dark:border-slate-850/40 rounded-xl px-4 py-2 font-mono text-[9px] text-slate-400 flex items-center gap-1.5 truncate">
                                             <Server size={11} className="shrink-0" />
                                             <span className="truncate" title={selectedLog.user_agent}>Navegador/Agente: {selectedLog.user_agent}</span>
+                                        </div>
+                                    )}
+                                    {(selectedLog.correlation_id || selectedLog.transaction_id) && (
+                                        <div className="bg-slate-50 dark:bg-[#070c14] border border-slate-200/60 dark:border-slate-850/40 rounded-xl px-4 py-2.5 font-mono text-[9px] text-slate-400 flex flex-col gap-1">
+                                            {selectedLog.correlation_id && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-extrabold text-indigo-500 uppercase tracking-wider text-[8px] w-24 shrink-0">ID Correlación:</span>
+                                                    <span className="select-all text-slate-600 dark:text-slate-350">{selectedLog.correlation_id}</span>
+                                                </div>
+                                            )}
+                                            {selectedLog.transaction_id && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-extrabold text-indigo-500 uppercase tracking-wider text-[8px] w-24 shrink-0">ID Transacción:</span>
+                                                    <span className="select-all text-slate-600 dark:text-slate-350">{selectedLog.transaction_id}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

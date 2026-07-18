@@ -79,6 +79,7 @@ db.exec(`
     currency TEXT DEFAULT 'BOB',
     cierre_id INTEGER DEFAULT NULL,
     notes TEXT DEFAULT NULL,
+    client_operation_id TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%S-04:00', 'now', '-4 hours'))
   );
 
@@ -309,6 +310,10 @@ try {
 } catch (e: any) {}
 
 try {
+  db.exec("ALTER TABLE sales ADD COLUMN client_operation_id TEXT DEFAULT NULL");
+} catch (e: any) {}
+
+try {
   db.exec("ALTER TABLE pending_sales ADD COLUMN paid_amount REAL DEFAULT 0.0");
 } catch (e: any) {}
 
@@ -461,6 +466,8 @@ try {
       error_code TEXT,
       error_message TEXT,
       metadata TEXT,
+      correlation_id TEXT,
+      transaction_id TEXT,
       created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%S-04:00', 'now', '-4 hours'))
     );
 
@@ -474,6 +481,34 @@ try {
 } catch (e: any) {
   console.error("Error creating system_audit_logs:", e.message);
 }
+
+// Ensure additional columns are present on the database
+try {
+  db.exec(`ALTER TABLE system_audit_logs ADD COLUMN correlation_id TEXT;`);
+} catch (e) {}
+try {
+  db.exec(`ALTER TABLE system_audit_logs ADD COLUMN transaction_id TEXT;`);
+} catch (e) {}
+
+// Database triggers to enforce database-level immutability
+try {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS prevent_system_audit_logs_update
+    BEFORE UPDATE ON system_audit_logs
+    BEGIN
+      SELECT RAISE(FAIL, 'system_audit_logs are immutable and cannot be updated');
+    END;
+  `);
+} catch (e) {}
+try {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS prevent_system_audit_logs_delete
+    BEFORE DELETE ON system_audit_logs
+    BEGIN
+      SELECT RAISE(FAIL, 'system_audit_logs are immutable and cannot be deleted');
+    END;
+  `);
+} catch (e) {}
 
 // Seed exchange rate default
 try {
@@ -704,6 +739,54 @@ try {
   console.error("Failed to migrate old audit logs to system_audit_logs:", e.message);
 }
 
+const SENSITIVE_FIELDS = [
+  "password",
+  "passwordhash",
+  "token",
+  "accesstoken",
+  "refreshtoken",
+  "secret",
+  "apikey",
+  "cookie",
+  "contrasena",
+  "clave",
+  "pwd",
+  "pin"
+];
+
+function sanitizeAuditData(data: any): any {
+  if (data === undefined || data === null) return null;
+  if (typeof data === 'string') {
+    const lower = data.toLowerCase();
+    if (SENSITIVE_FIELDS.some(f => lower.includes(f))) {
+      try {
+        const parsed = JSON.parse(data);
+        if (typeof parsed === 'object' && parsed !== null) {
+          return JSON.stringify(sanitizeAuditData(parsed));
+        }
+      } catch (e) {}
+      return "[REDACTED/CENSURADO]";
+    }
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeAuditData(item));
+  }
+  if (typeof data === 'object') {
+    const copy = { ...data };
+    for (const key of Object.keys(copy)) {
+      const lowerKey = key.toLowerCase();
+      if (SENSITIVE_FIELDS.some(f => lowerKey.includes(f))) {
+        copy[key] = "[REDACTED/CENSURADO]";
+      } else {
+        copy[key] = sanitizeAuditData(copy[key]);
+      }
+    }
+    return copy;
+  }
+  return data;
+}
+
 export function insertSystemAuditLog(log: any) {
   try {
     const stmt = db.prepare(`
@@ -719,7 +802,7 @@ export function insertSystemAuditLog(log: any) {
         related_sale_id, related_ticket, related_product_id,
         related_cash_id, related_inventory_movement_id, related_session_id,
         source_module, device_info, user_agent, ip_address,
-        error_code, error_message, metadata
+        error_code, error_message, metadata, correlation_id, transaction_id
       ) VALUES (
         ?, ?, ?, ?, ?,
         ?, ?, ?,
@@ -732,9 +815,24 @@ export function insertSystemAuditLog(log: any) {
         ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?
+        ?, ?, ?, ?, ?
       )
     `);
+
+    const rawBefore = log.beforeData !== undefined ? log.beforeData : log.before_data;
+    const rawAfter = log.afterData !== undefined ? log.afterData : log.after_data;
+    const rawChanged = log.changedFields !== undefined ? log.changedFields : log.changed_fields;
+    const rawMetadata = log.metadata;
+
+    const sanitizedBeforeObj = sanitizeAuditData(rawBefore);
+    const sanitizedAfterObj = sanitizeAuditData(rawAfter);
+    const sanitizedChangedObj = sanitizeAuditData(rawChanged);
+    const sanitizedMetadataObj = sanitizeAuditData(rawMetadata);
+
+    const beforeStr = sanitizedBeforeObj ? (typeof sanitizedBeforeObj === 'object' ? JSON.stringify(sanitizedBeforeObj) : String(sanitizedBeforeObj)) : null;
+    const afterStr = sanitizedAfterObj ? (typeof sanitizedAfterObj === 'object' ? JSON.stringify(sanitizedAfterObj) : String(sanitizedAfterObj)) : null;
+    const changedStr = sanitizedChangedObj ? (typeof sanitizedChangedObj === 'object' ? JSON.stringify(sanitizedChangedObj) : String(sanitizedChangedObj)) : null;
+    const metadataStr = sanitizedMetadataObj ? (typeof sanitizedMetadataObj === 'object' ? JSON.stringify(sanitizedMetadataObj) : String(sanitizedMetadataObj)) : null;
 
     const result = stmt.run(
       log.eventType || log.event_type || null,
@@ -750,9 +848,9 @@ export function insertSystemAuditLog(log: any) {
       log.userRole || log.user_role || null,
       log.affectedUserId || log.affected_user_id || null,
       log.affectedUserName || log.affected_user_name || null,
-      log.beforeData ? (typeof log.beforeData === 'object' ? JSON.stringify(log.beforeData) : log.beforeData) : (log.before_data ? (typeof log.before_data === 'object' ? JSON.stringify(log.before_data) : log.before_data) : null),
-      log.afterData ? (typeof log.afterData === 'object' ? JSON.stringify(log.afterData) : log.afterData) : (log.after_data ? (typeof log.after_data === 'object' ? JSON.stringify(log.after_data) : log.after_data) : null),
-      log.changedFields ? (typeof log.changedFields === 'object' ? JSON.stringify(log.changedFields) : log.changedFields) : (log.changed_fields ? (typeof log.changed_fields === 'object' ? JSON.stringify(log.changed_fields) : log.changed_fields) : null),
+      beforeStr,
+      afterStr,
+      changedStr,
       log.quantityBefore !== undefined && log.quantityBefore !== null ? log.quantityBefore : (log.quantity_before !== undefined && log.quantity_before !== null ? log.quantity_before : null),
       log.quantityChanged !== undefined && log.quantityChanged !== null ? log.quantityChanged : (log.quantity_changed !== undefined && log.quantity_changed !== null ? log.quantity_changed : null),
       log.quantityAfter !== undefined && log.quantityAfter !== null ? log.quantityAfter : (log.quantity_after !== undefined && log.quantity_after !== null ? log.quantity_after : null),
@@ -761,7 +859,7 @@ export function insertSystemAuditLog(log: any) {
       log.currency || null,
       log.exchangeRate || log.exchange_rate || null,
       log.reason || null,
-      log.result || null,
+      log.result || log.result || null,
       log.status || 'success',
       log.relatedSaleId || log.related_sale_id || null,
       log.relatedTicket || log.related_ticket || null,
@@ -775,7 +873,9 @@ export function insertSystemAuditLog(log: any) {
       log.ipAddress || log.ip_address || null,
       log.errorCode || log.error_code || null,
       log.errorMessage || log.error_message || null,
-      log.metadata ? (typeof log.metadata === 'object' ? JSON.stringify(log.metadata) : log.metadata) : null
+      metadataStr,
+      log.correlationId || log.correlation_id || null,
+      log.transactionId || log.transaction_id || null
     );
     return result.lastInsertRowid;
   } catch (err: any) {
