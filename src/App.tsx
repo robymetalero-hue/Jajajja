@@ -243,7 +243,7 @@ function AppLayout() {
 
     
     useLayoutEffect(() => {
-        const allowedKioskViews = ['pos', 'cajas', 'historial_ventas', 'productos', 'conteo_fisico'];
+        const allowedKioskViews = ['pos', 'cajas', 'historial_ventas', 'conteo_fisico'];
         if (isKioskLocked && !allowedKioskViews.includes(view)) {
             setView('pos');
         }
@@ -757,7 +757,6 @@ function AppLayout() {
                         {renderNavItem('pos', 'Punto de Venta', ShoppingCart)}
                         {renderNavItem('cajas', 'Mi Caja', Landmark)}
                         {renderNavItem('historial_ventas', 'Mis Ventas de Hoy', Receipt)}
-                        {renderNavItem('productos', 'Ver Inventario', PackageSearch)}
                         {renderNavItem('conteo_fisico', 'Conteo Físico', ClipboardCheck)}
                     </div>
                 </div>
@@ -1129,17 +1128,6 @@ function AppLayout() {
                         >
                             <Receipt size={18} />
                             <span className="text-[9px] font-black uppercase tracking-wider">Historial</span>
-                        </button>
-                        <button
-                            onClick={() => setView('productos')}
-                            className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors ${
-                                view === 'productos' 
-                                    ? 'text-blue-600 dark:text-[#38bdf8]' 
-                                    : 'text-slate-500 dark:text-slate-400 hover:text-blue-500'
-                            }`}
-                        >
-                            <PackageSearch size={18} />
-                            <span className="text-[9px] font-black uppercase tracking-wider">Stock</span>
                         </button>
                         <button
                             onClick={() => setView('conteo_fisico')}

@@ -1575,7 +1575,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         eventType: 'creacion_producto',
         category: 'productos',
         module: 'inventario',
-        action: 'Creación de producto',
+        action: `Creación de nuevo producto: ${name.trim()} con stock inicial de ${safeStock}`,
         severity: 'info',
         entityType: 'producto',
         entityId: result.lastInsertRowid,
@@ -1583,7 +1583,10 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         userId: auditUser.userId,
         userName: auditUser.userName || 'admin',
         userRole: auditUser.userRole,
+        quantityBefore: 0,
+        quantityChanged: safeStock,
         quantityAfter: safeStock,
+        priceBefore: 0,
         priceAfter: safePriceUnit,
         reason: 'Creación inicial de producto',
         afterData: { name: name.trim(), category: category.trim(), sku: sku.trim(), stock: safeStock, price_unit: safePriceUnit, price_bulk: safePriceBulk, price_cost: safePriceCost, stock_alarm: safeStockAlarm },
@@ -1960,6 +1963,32 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
       // Sort by created_at descending
       unifiedLogs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      // Reconstruct missing quantity_before and quantity_after based on current stock tracing backwards
+      try {
+        const product = db.prepare('SELECT stock FROM products WHERE id = ?').get(id) as any;
+        let runningStock = product ? (product.stock || 0) : 0;
+        
+        for (const log of unifiedLogs) {
+          const isStockChanging = ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento', 'ajuste_decremento', 'salida_venta'].includes(log.type);
+          if (isStockChanging) {
+            const isIncrease = ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento'].includes(log.type);
+            const qty = Number(log.quantity) || 0;
+            
+            if (log.quantity_after === null || log.quantity_after === undefined) {
+              log.quantity_after = runningStock;
+            }
+            if (log.quantity_before === null || log.quantity_before === undefined) {
+              log.quantity_before = isIncrease ? runningStock - qty : runningStock + qty;
+            }
+            
+            // Move runningStock backward in time
+            runningStock = isIncrease ? runningStock - qty : runningStock + qty;
+          }
+        }
+      } catch (calcErr: any) {
+        console.warn("Failed to reconstruct stock history: ", calcErr.message);
+      }
 
       res.json(unifiedLogs);
     } catch (e: any) {
@@ -4076,7 +4105,31 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           .run(user.id, user.username, oldRate, numRate);
       });
       transaction();
-      syncAfterWrite(["settings", "exchange_rate_audit"]);
+      
+      try {
+        insertSystemAuditLog({
+          eventType: 'modificar_tipo_cambio',
+          category: 'configuracion',
+          module: 'configuracion',
+          action: `Se modificó el tipo de cambio de ${oldRate} a ${numRate}`,
+          severity: 'critical',
+          entityType: 'Tipo de Cambio',
+          entityId: 'exchange_rate',
+          entityName: 'Tipo de Cambio Oficial',
+          userId: user.id,
+          userName: user.username,
+          userRole: user.role,
+          reason: req.body.reason || 'Ajuste manual del tipo de cambio',
+          beforeData: { exchange_rate: oldRate },
+          afterData: { exchange_rate: numRate },
+          changedFields: { exchange_rate: { before: oldRate, after: numRate } },
+          status: 'success'
+        });
+      } catch (auditErr: any) {
+        console.warn("[Audit Error] Failed to log exchange rate change:", auditErr.message);
+      }
+
+      syncAfterWrite(["settings", "exchange_rate_audit", "system_audit_logs"]);
       res.json({ success: true, old_rate: oldRate, new_rate: numRate });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4107,8 +4160,35 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.post("/api/settings/kiosk", (req, res) => {
     try {
       const { kiosk_mode } = req.body;
+      const oldRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('kiosk_mode') as any;
+      const oldKioskMode = oldRow && oldRow.value === 'true' ? true : false;
+
       db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('kiosk_mode', kiosk_mode ? 'true' : 'false');
-      syncAfterWrite("settings");
+      
+      try {
+        const auditUser = (req as any).auditUser || {};
+        insertSystemAuditLog({
+          eventType: 'modificar_modo_kiosco',
+          category: 'configuracion',
+          module: 'configuracion',
+          action: `Se cambió el estado de bloqueo del Kiosco de ${oldKioskMode ? 'Bloqueado/Solo Kiosco' : 'Desbloqueado/Panel Completo'} a ${kiosk_mode ? 'Bloqueado/Solo Kiosco' : 'Desbloqueado/Panel Completo'}`,
+          severity: 'warning',
+          entityType: 'Configuración de Interfaz',
+          entityId: 'kiosk_mode',
+          entityName: 'Modo Kiosco',
+          userId: auditUser.userId,
+          userName: auditUser.userName || 'admin',
+          userRole: auditUser.userRole,
+          beforeData: { kiosk_mode: oldKioskMode },
+          afterData: { kiosk_mode: !!kiosk_mode },
+          changedFields: { kiosk_mode: { before: oldKioskMode, after: !!kiosk_mode } },
+          status: 'success'
+        });
+      } catch (auditErr: any) {
+        console.warn("[Audit Error] Failed to log kiosk mode change:", auditErr.message);
+      }
+
+      syncAfterWrite(["settings", "system_audit_logs"]);
       try { broadcastAlert(JSON.stringify({ type: "kiosk_mode_changed", kiosk_mode: kiosk_mode ? true : false })); } catch (err) {}
       res.json({ success: true, kiosk_mode });
     } catch (e) {

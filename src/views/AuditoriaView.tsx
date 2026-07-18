@@ -171,6 +171,8 @@ export default function AuditoriaView() {
                 return <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/5 dark:text-emerald-400 rounded-lg">Inventario</span>;
             case 'ventas':
                 return <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-pink-500/10 text-pink-600 dark:bg-pink-500/5 dark:text-pink-400 rounded-lg">Ventas</span>;
+            case 'configuracion':
+                return <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/5 dark:text-cyan-400 rounded-lg">Configuración</span>;
             default:
                 return <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 rounded-lg">Sistema</span>;
         }
