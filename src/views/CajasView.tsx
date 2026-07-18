@@ -3,7 +3,8 @@ import { useAppContext } from '../context/AppContext';
 import { hasPermission } from '../utils/permissions';
 import { 
   Landmark, DollarSign, History, Calendar, Clock, RefreshCw, ChevronRight, X, FileText, 
-  UserCheck, HelpCircle, ArrowUpRight, ArrowDownLeft, Sliders, AlertCircle, Plus, Search, CheckCircle2
+  UserCheck, HelpCircle, ArrowUpRight, ArrowDownLeft, Sliders, AlertCircle, Plus, Search, CheckCircle2,
+  ShoppingBag, AlertTriangle
 } from 'lucide-react';
 
 interface CashAccount {
@@ -75,6 +76,44 @@ export default function CajasView() {
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [settlements, setSettlements] = useState<CashSettlement[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Filter pending/all movements in detail modal
+  const [showOnlyPending, setShowOnlyPending] = useState(true);
+
+  // Ticket trace details modal states
+  const [traceTicketId, setTraceTicketId] = useState<number | null>(null);
+  const [traceTicketDetails, setTraceTicketDetails] = useState<any | null>(null);
+  const [traceTicketItems, setTraceTicketItems] = useState<any[]>([]);
+  const [loadingTraceTicket, setLoadingTraceTicket] = useState(false);
+  const [showTraceTicketModal, setShowTraceTicketModal] = useState(false);
+
+  const handleOpenTicketTrace = async (saleId: number) => {
+    setTraceTicketId(saleId);
+    setLoadingTraceTicket(true);
+    setShowTraceTicketModal(true);
+    try {
+      const saleRes = await fetch(`/api/sales/${saleId}`);
+      if (saleRes.ok) {
+        const saleData = await saleRes.json();
+        setTraceTicketDetails(saleData);
+      } else {
+        setTraceTicketDetails(null);
+      }
+
+      const itemsRes = await fetch(`/api/sales/${saleId}/items`);
+      if (itemsRes.ok) {
+        const itemsData = await itemsRes.json();
+        setTraceTicketItems(itemsData);
+      } else {
+        setTraceTicketItems([]);
+      }
+    } catch (err) {
+      console.error("Error fetching ticket trace details:", err);
+      showNotification?.("Fallo al conectar para recuperar los detalles del ticket.", "error");
+    } finally {
+      setLoadingTraceTicket(false);
+    }
+  };
 
   // Modals and dialog forms
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -719,8 +758,33 @@ export default function CajasView() {
 
             {/* Listado de movimientos de este vendedor */}
             <div className="flex-1 overflow-y-auto px-5 border-t border-b border-slate-100 dark:border-slate-850/60 py-1">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1 select-none">Transacciones del periodo activo:</span>
-              <div className="border border-slate-100 dark:border-slate-850/65 rounded-xl overflow-hidden mt-1.5">
+              <div className="flex justify-between items-center py-2 select-none">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Transacciones:</span>
+                <div className="flex bg-slate-100 dark:bg-black/40 p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-850">
+                  <button
+                    onClick={() => setShowOnlyPending(true)}
+                    className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      showOnlyPending
+                        ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs font-black'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Activo (Sin Liquidar)
+                  </button>
+                  <button
+                    onClick={() => setShowOnlyPending(false)}
+                    className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      !showOnlyPending
+                        ? 'bg-white dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 shadow-xs font-black'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Todo el Historial
+                  </button>
+                </div>
+              </div>
+
+              <div className="border border-slate-100 dark:border-slate-850/65 rounded-xl overflow-hidden mt-1">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-150 dark:border-slate-850/60 text-[8px] font-bold text-slate-400 uppercase tracking-widest">
@@ -734,14 +798,22 @@ export default function CajasView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-850/50 text-[10.5px] font-bold">
-                    {movements.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="p-12 text-center text-slate-400 font-semibold uppercase tracking-wider">
-                          No se registran transacciones para este arqueo de caja.
-                        </td>
-                      </tr>
-                    ) : (
-                      movements.map(m => {
+                    {(() => {
+                      const displayedMovements = showOnlyPending 
+                        ? movements.filter(m => m.status === 'pendiente') 
+                        : movements;
+
+                      if (displayedMovements.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={7} className="p-12 text-center text-slate-400 font-semibold uppercase tracking-wider">
+                              No se registran transacciones {showOnlyPending ? 'pendientes' : ''} para este arqueo de caja.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return displayedMovements.map(m => {
                         let typeBadge = 'bg-slate-50 text-slate-500 border-slate-150';
                         let amtColor = 'text-slate-800 dark:text-slate-205';
 
@@ -767,7 +839,18 @@ export default function CajasView() {
                                 {m.type === 'venta' ? 'VENTA' : m.type === 'devolucion' ? 'DEVOLUCIÓN' : m.type.replace('_', ' ')}
                               </span>
                             </td>
-                            <td className="p-3 text-center font-mono text-slate-500">{m.sale_id ? `Ticket #${m.sale_id}` : 'Manual'}</td>
+                            <td className="p-3 text-center font-mono">
+                              {m.sale_id ? (
+                                <button
+                                  onClick={() => handleOpenTicketTrace(m.sale_id!)}
+                                  className="text-indigo-600 dark:text-indigo-400 hover:underline hover:text-indigo-800 dark:hover:text-indigo-300 transition cursor-pointer font-bold bg-transparent border-0 p-0"
+                                >
+                                  Ticket #{m.sale_id}
+                                </button>
+                              ) : (
+                                <span className="text-slate-400">Manual</span>
+                              )}
+                            </td>
                             <td className="p-3 text-center">
                               <span className="bg-slate-50 dark:bg-black/30 border border-slate-200/50 dark:border-slate-850 py-0.5 px-2 text-[9px] rounded-lg">
                                 {m.payment_method}
@@ -780,8 +863,8 @@ export default function CajasView() {
                             <td className="p-3 text-center pr-4 font-mono text-slate-450 text-[9px]">{new Date(m.created_at).toLocaleString()}</td>
                           </tr>
                         );
-                      })
-                    )}
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -945,6 +1028,148 @@ export default function CajasView() {
                 className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer uppercase transition"
               >
                 Registrar Movimiento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTraceTicketModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[70] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-[#0c111e] rounded-3xl border border-slate-200 dark:border-slate-850 w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-850 flex items-center justify-between bg-slate-50 dark:bg-[#070c14]/30">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="text-indigo-600 dark:text-indigo-400" size={18} />
+                <span className="font-black text-xs uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                  Trazabilidad: Detalle de Ticket #{traceTicketId}
+                </span>
+              </div>
+              <button 
+                onClick={() => setShowTraceTicketModal(false)}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 cursor-pointer transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-5">
+              {loadingTraceTicket ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <RefreshCw size={24} className="text-indigo-500 animate-spin" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cargando datos del ticket de venta...</span>
+                </div>
+              ) : !traceTicketDetails ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
+                  <AlertTriangle className="text-amber-500" size={32} />
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-350">Error al cargar</span>
+                  <p className="text-[11px] text-slate-400 max-w-sm">No se encontraron los datos generales o históricos para el ticket seleccionado.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Ticket General Metadata */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-[#070c14]/40 border border-slate-150 dark:border-slate-850/60 p-4 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-350">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Fecha de Emisión</span>
+                      <span className="text-slate-800 dark:text-slate-200">{new Date(traceTicketDetails.created_at).toLocaleString()}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Atendido por</span>
+                      <span className="text-slate-800 dark:text-slate-200 uppercase">@{traceTicketDetails.user_name || 'Cajero'}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Método de Pago</span>
+                      <span className="text-indigo-600 dark:text-indigo-400 uppercase">{traceTicketDetails.payment_method}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Cliente de Registro</span>
+                      <span className="text-slate-800 dark:text-slate-200 truncate">{traceTicketDetails.client_name || 'Al Público'}</span>
+                    </div>
+                  </div>
+
+                  {/* Products Table */}
+                  <div className="flex flex-col gap-2.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <span>Detalle de Artículos Vendidos en la misma Transacción</span>
+                      <span className="bg-slate-100 dark:bg-slate-850 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-mono text-[9px]">{traceTicketItems.length} items</span>
+                    </span>
+
+                    <div className="border border-slate-200/80 dark:border-slate-850/80 rounded-2xl overflow-hidden bg-white dark:bg-[#0c111e]">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 dark:bg-[#070c14]/30 border-b border-slate-150 dark:border-slate-850/80 text-[8.5px] font-black uppercase text-slate-400 tracking-wider font-mono">
+                            <th className="p-3">Artículo</th>
+                            <th className="p-3 text-center">Cant</th>
+                            <th className="p-3 text-right">Precio Pz</th>
+                            <th className="p-3 text-right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {traceTicketItems.map((item) => {
+                            return (
+                              <tr key={item.id} className="border-b border-slate-100 dark:border-slate-850/40 last:border-0 text-slate-600 dark:text-slate-300">
+                                <td className="p-3">
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{item.product_name || 'Producto'}</span>
+                                    <span className="text-[8.5px] font-mono text-slate-400 mt-0.5">SKU: {item.product_sku_snapshot || item.sku || 'N/A'}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center font-mono">{item.quantity} pz</td>
+                                <td className="p-3 text-right font-mono">
+                                  {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{item.price?.toFixed(2)}
+                                </td>
+                                <td className="p-3 text-right font-mono text-slate-800 dark:text-slate-200">
+                                  {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{(item.quantity * item.price)?.toFixed(2)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Financial Summary */}
+                  <div className="flex flex-col gap-2.5 bg-slate-50 dark:bg-[#070c14]/20 border border-slate-150 dark:border-slate-850/60 p-5 rounded-2xl text-xs font-bold mt-2">
+                    <div className="flex items-center justify-between text-slate-500">
+                      <span>Subtotal Bruto:</span>
+                      <span className="font-mono text-slate-700 dark:text-slate-300">
+                        {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{(traceTicketDetails.total + traceTicketDetails.discount).toFixed(2)}
+                      </span>
+                    </div>
+                    {traceTicketDetails.discount > 0 && (
+                      <div className="flex items-center justify-between text-emerald-500">
+                        <span>Descuento Aplicado:</span>
+                        <span className="font-mono">
+                          -{traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{traceTicketDetails.discount.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-base font-black border-t border-slate-200 dark:border-slate-800 pt-2.5 text-slate-800 dark:text-white">
+                      <span>Total Transado:</span>
+                      <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                        {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{traceTicketDetails.total.toFixed(2)} {traceTicketDetails.currency}
+                      </span>
+                    </div>
+                    {traceTicketDetails.currency === 'BOB' && exchangeRate && (
+                      <div className="text-[10px] text-slate-400 flex items-center justify-between font-medium border-t border-slate-150 dark:border-slate-850 pt-2">
+                        <span>Conversión Referencial (Tipo de Cambio: {exchangeRate}):</span>
+                        <span className="font-mono font-bold">${(traceTicketDetails.total / exchangeRate).toFixed(2)} USD</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-850 flex justify-end bg-slate-50 dark:bg-[#070c14]/20">
+              <button 
+                onClick={() => setShowTraceTicketModal(false)}
+                className="py-2 px-5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl cursor-pointer shadow-md transition-all uppercase tracking-wider"
+              >
+                Entendido
               </button>
             </div>
           </div>

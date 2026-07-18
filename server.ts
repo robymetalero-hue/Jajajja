@@ -4880,6 +4880,53 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
       transaction();
       syncAfterWrite(["cash_accounts", "cash_movements", "cash_settlements"]);
+
+      // Get current exchange rate for audit log
+      const rateRow = db.prepare("SELECT value FROM settings WHERE key = 'exchange_rate'").get() as any;
+      const currentRate = rateRow ? parseFloat(rateRow.value) : 6.96;
+
+      const salesTickets = pendingMovements.filter(m => m.type === 'venta').map(m => m.sale_id ? `#${m.sale_id}` : 'Venta').join(', ');
+      const expensesList = pendingMovements.filter(m => m.type === 'retiro_manual').map(m => `Retiro/Gasto: ${m.notes || ''} (${m.amount} BOB)`).join('; ');
+      
+      let auditNotesStr = `Liquidación de caja de ${sellerAcc.seller_username} por admin/propietario ${admin_username || 'admin'}. `;
+      if (salesTickets) auditNotesStr += `Tickets incluidos: ${salesTickets}. `;
+      if (expensesList) auditNotesStr += `Gastos/Retiros incluidos: ${expensesList}. `;
+      auditNotesStr += `Obs: ${notes || 'Liquidación recibida conforme.'}`;
+
+      insertSystemAuditLog({
+        event_type: "liquidacion_caja",
+        category: "cajas",
+        module: "cajas",
+        action: "liquidar",
+        severity: difference === 0 ? "info" : "warning",
+        entity_type: "caja_vendedor",
+        entity_id: String(sellerId),
+        entity_name: sellerAcc.seller_username,
+        user_id: admin_id || 1,
+        user_name: admin_username || 'admin',
+        user_role: userRole || 'admin',
+        before_data: JSON.stringify({ current_balance: calculated }),
+        after_data: JSON.stringify({ current_balance: 0.0 }),
+        changed_fields: JSON.stringify({ current_balance: [calculated, 0.0] }),
+        quantity_before: pendingMovements.length,
+        quantity_changed: -pendingMovements.length,
+        quantity_after: 0,
+        price_before: calculated,
+        price_after: delivered,
+        currency: "BOB",
+        exchange_rate: currentRate,
+        reason: auditNotesStr,
+        result: `Arqueo finalizado con diferencia de ${difference.toFixed(2)} Bs.`,
+        status: status,
+        metadata: JSON.stringify({
+          tickets_count: pendingMovements.filter(m => m.type === 'venta').length,
+          sales_total: pendingMovements.filter(m => m.type === 'venta').reduce((sum, m) => sum + m.amount, 0),
+          returns_total: pendingMovements.filter(m => m.type === 'devolucion').reduce((sum, m) => sum + m.amount, 0),
+          manual_inflows: pendingMovements.filter(m => m.type === 'ingreso_manual').reduce((sum, m) => sum + m.amount, 0),
+          manual_outflows: pendingMovements.filter(m => m.type === 'retiro_manual').reduce((sum, m) => sum + m.amount, 0)
+        })
+      });
+
       res.json({ success: true, calculated, delivered, difference });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4908,6 +4955,10 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.post("/api/cash-accounts/:sellerId/adjust", (req, res) => {
     const sellerId = Number(req.params.sellerId);
     const { amount, type, notes, payment_method } = req.body; // type = 'ingreso_manual' o 'retiro_manual'
+    
+    const userRole = req.headers['x-user-role'] || req.query.user_role;
+    const userId = Number(req.headers['x-user-id'] || req.query.user_id);
+
     try {
       const isIngreso = type === 'ingreso_manual';
       const adjustedAmount = isIngreso ? Math.abs(Number(amount)) : -Math.abs(Number(amount));
@@ -4916,6 +4967,11 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       if (!sellerAcc) {
         return res.status(404).json({ error: "Cuenta de caja no encontrada." });
       }
+
+      // Fetch user username for audit logging
+      const userRow = db.prepare('SELECT username, role FROM users WHERE id = ?').get(userId) as any;
+      const userName = userRow?.username || 'admin';
+      const actualRole = userRow?.role || userRole || 'admin';
 
       const transaction = db.transaction(() => {
         db.prepare(`
@@ -4932,6 +4988,35 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
       transaction();
       syncAfterWrite(["cash_accounts", "cash_movements"]);
+
+      const rateRow = db.prepare("SELECT value FROM settings WHERE key = 'exchange_rate'").get() as any;
+      const currentRate = rateRow ? parseFloat(rateRow.value) : 6.96;
+
+      // Create a nice system audit log entry for this adjustment (especially withdrawals / expenses)
+      insertSystemAuditLog({
+        event_type: type, // 'ingreso_manual' or 'retiro_manual'
+        category: "cajas",
+        module: "cajas",
+        action: isIngreso ? "ingreso_efectivo" : "retiro_efectivo",
+        severity: isIngreso ? "info" : "warning",
+        entity_type: "caja_vendedor",
+        entity_id: String(sellerId),
+        entity_name: sellerAcc.seller_username,
+        user_id: userId || 1,
+        user_name: userName,
+        user_role: actualRole,
+        before_data: JSON.stringify({ current_balance: sellerAcc.current_balance }),
+        after_data: JSON.stringify({ current_balance: sellerAcc.current_balance + adjustedAmount }),
+        changed_fields: JSON.stringify({ current_balance: [sellerAcc.current_balance, sellerAcc.current_balance + adjustedAmount] }),
+        price_before: sellerAcc.current_balance,
+        price_after: sellerAcc.current_balance + adjustedAmount,
+        currency: "BOB",
+        exchange_rate: currentRate,
+        reason: notes || (isIngreso ? 'Ingreso de caja manual' : 'Retiro/Gasto de caja manual'),
+        result: `Monto ajustado: ${adjustedAmount.toFixed(2)} Bs. con método ${payment_method || 'Efectivo'}`,
+        status: "completado"
+      });
+
       res.json({ success: true, newBalance: sellerAcc.current_balance + adjustedAmount });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
