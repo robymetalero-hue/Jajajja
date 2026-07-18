@@ -12,6 +12,7 @@ import { jsPDF } from 'jspdf';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
 import { saveOfflineSale } from '../utils/offlineStorage';
 import { useElasticScroll } from '../utils/touchScroll';
+import { safeDispatchEvent } from '../utils/events';
 
 interface SaleTab {
     id: number;
@@ -1241,6 +1242,16 @@ export default function POS() {
                 if (res.ok) {
                     const data = await res.json();
                     const saleId = data.saleId;
+                    
+                    // Dispatch global event for inventory transaction tracking
+                    safeDispatchEvent('inventory_operation', {
+                        detail: {
+                            type: 'sale',
+                            id: saleId,
+                            user: user?.username || 'Cajero',
+                            timestamp: new Date().toISOString()
+                        }
+                    });
                     
                     generateTicketPDF(methodToUse, saleId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, creditDestination, checkoutDescription);
                     

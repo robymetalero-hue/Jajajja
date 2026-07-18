@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { safeDispatchEvent } from '../utils/events';
 import { 
   ClipboardCheck, Clock, CheckCircle, AlertTriangle, Play, X, Trash2, 
   Save, Eye, RefreshCw, Sparkles, Filter, Search, Check, Ban, ChevronDown, ChevronUp, AlertOctagon, Undo, ChevronRight
@@ -320,6 +321,16 @@ export default function PhysicalCountManager({ onClose }: PhysicalCountManagerPr
         await fetchActiveSession();
         await fetchProducts();
         await fetchHistory();
+        
+        // Dispatch global inventory operation event
+        safeDispatchEvent('inventory_operation', {
+          detail: {
+            type: 'physical_count',
+            id: activeSession.id,
+            user: user?.username || 'admin',
+            timestamp: new Date().toISOString()
+          }
+        });
       } else {
         const err = await res.json();
         showNotification?.(`Error al aprobar: ${err.error}`, "error");

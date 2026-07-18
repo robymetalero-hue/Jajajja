@@ -824,7 +824,7 @@ export function insertSystemAuditLog(log: any) {
         related_sale_id, related_ticket, related_product_id,
         related_cash_id, related_inventory_movement_id, related_session_id,
         source_module, device_info, user_agent, ip_address,
-        error_code, error_message, metadata, correlation_id, transaction_id
+        error_code, error_message, metadata, correlation_id, transaction_id, created_at
       ) VALUES (
         ?, ?, ?, ?, ?,
         ?, ?, ?,
@@ -837,7 +837,7 @@ export function insertSystemAuditLog(log: any) {
         ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?
       )
     `);
 
@@ -873,7 +873,7 @@ export function insertSystemAuditLog(log: any) {
       beforeStr,
       afterStr,
       changedStr,
-      log.quantityBefore !== undefined && log.quantityBefore !== null ? log.quantityBefore : (log.quantity_before !== undefined && log.quantity_before !== null ? log.quantity_before : null),
+      log.quantityBefore !== undefined && log.quantityBefore !== null ? log.quantityBefore : (log.quantity_changed !== undefined && log.quantity_changed !== null ? log.quantity_changed : null),
       log.quantityChanged !== undefined && log.quantityChanged !== null ? log.quantityChanged : (log.quantity_changed !== undefined && log.quantity_changed !== null ? log.quantity_changed : null),
       log.quantityAfter !== undefined && log.quantityAfter !== null ? log.quantityAfter : (log.quantity_after !== undefined && log.quantity_after !== null ? log.quantity_after : null),
       log.priceBefore !== undefined && log.priceBefore !== null ? log.priceBefore : (log.price_before !== undefined && log.price_before !== null ? log.price_before : null),
@@ -897,7 +897,8 @@ export function insertSystemAuditLog(log: any) {
       log.errorMessage || log.error_message || null,
       metadataStr,
       log.correlationId || log.correlation_id || null,
-      log.transactionId || log.transaction_id || null
+      log.transactionId || log.transaction_id || null,
+      log.createdAt || log.created_at || getBoliviaISOString()
     );
     return result.lastInsertRowid;
   } catch (err: any) {

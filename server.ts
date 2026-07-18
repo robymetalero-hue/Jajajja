@@ -1571,7 +1571,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       
       // Audit creation
       const auditUser = (req as any).auditUser || {};
-      insertSystemAuditLog({
+      const sysLogId = insertSystemAuditLog({
         eventType: 'creacion_producto',
         category: 'productos',
         module: 'inventario',
@@ -1594,7 +1594,38 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         status: 'success'
       });
 
-      syncAfterWrite("products", result.lastInsertRowid);
+      let invLogId: any = null;
+      if (safeStock > 0) {
+        const normUserId = auditUser.userId || 1;
+        const normUsername = auditUser.userName || 'admin';
+        const invRes = db.prepare(`
+          INSERT INTO inventory_audit_logs 
+          (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+          VALUES (?, ?, ?, 'ingreso_compra', ?, ?, ?, ?, 'Stock Inicial', 'Registro inicial al crear producto', ?)
+        `).run(
+          result.lastInsertRowid, 
+          name.trim(), 
+          sku.trim(), 
+          safeStock, 
+          safePriceCost, 
+          normUserId, 
+          normUsername,
+          getBoliviaISOString()
+        );
+        invLogId = invRes.lastInsertRowid;
+      }
+
+      const syncMap: Record<string, any[]> = {
+        products: [result.lastInsertRowid]
+      };
+      if (sysLogId) {
+        syncMap.system_audit_logs = [sysLogId];
+      }
+      if (invLogId) {
+        syncMap.inventory_audit_logs = [invLogId];
+      }
+
+      syncAfterWrite(syncMap);
       checkAndNotifyLowStock(result.lastInsertRowid);
       res.json({ success: true, id: result.lastInsertRowid });
     } catch (e: any) {
@@ -1752,18 +1783,22 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const reasonText = req.body.reason || req.body.notes || 'Modificación manual desde panel de inventario';
 
       // Insert legacy audit log
+      let invLogId: any = null;
       if (diff !== 0) {
         const logType = diff > 0 ? 'ajuste_incremento' : 'ajuste_decremento';
         const absQty = Math.abs(diff);
-        db.prepare(`
+        const normUserId = auditUser.userId || user_id || 1;
+        const normUsername = auditUser.userName || username || 'admin';
+        const invRes = db.prepare(`
           INSERT INTO inventory_audit_logs 
-          (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, name.trim(), sku.trim(), logType, absQty, safePriceCost, auditUser.userId || user_id || 1, auditUser.userName || username || 'admin', 'Ajuste Manual', reasonText);
+          (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, name.trim(), sku.trim(), logType, absQty, safePriceCost, normUserId, normUsername, 'Ajuste Manual', reasonText, getBoliviaISOString());
+        invLogId = invRes.lastInsertRowid;
       }
 
       // Insert professional system audit log
-      insertSystemAuditLog({
+      const sysLogId = insertSystemAuditLog({
         eventType: logEventType,
         category: logCategory,
         module: 'inventario',
@@ -1788,7 +1823,17 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         status: 'success'
       });
 
-      syncAfterWrite("products", id);
+      const syncMap: Record<string, any[]> = {
+        products: [id]
+      };
+      if (invLogId) {
+        syncMap.inventory_audit_logs = [invLogId];
+      }
+      if (sysLogId) {
+        syncMap.system_audit_logs = [sysLogId];
+      }
+
+      syncAfterWrite(syncMap);
       checkAndNotifyLowStock(id);
       res.json({ success: true });
     } catch (e: any) {
@@ -1910,6 +1955,8 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           } catch (e) {}
         }
 
+        const isInc = ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento'].includes(log.type);
+
         return {
           id: log.id,
           type: log.type, // 'ingreso_compra', 'salida_venta', etc.
@@ -1921,6 +1968,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           notes: match?.reason || log.notes || 'Movimiento de inventario',
           quantity_before: match ? match.quantity_before : null,
           quantity_after: match ? match.quantity_after : null,
+          quantity_changed: match && match.quantity_changed !== null && match.quantity_changed !== undefined ? match.quantity_changed : (isInc ? log.quantity : -log.quantity),
           price_before: match ? match.price_before : null,
           price_after: match ? match.price_after : null,
           changed_fields: parsedFields
@@ -1955,6 +2003,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           notes: sys.reason || 'Log registrado por sistema',
           quantity_before: sys.quantity_before,
           quantity_after: sys.quantity_after,
+          quantity_changed: sys.quantity_changed,
           price_before: sys.price_before,
           price_after: sys.price_after,
           changed_fields: parsedFields
@@ -1970,9 +2019,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         let runningStock = product ? (product.stock || 0) : 0;
         
         for (const log of unifiedLogs) {
-          const isStockChanging = ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento', 'ajuste_decremento', 'salida_venta'].includes(log.type);
+          const isStockChanging = ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento', 'ajuste_decremento', 'salida_venta', 'creacion_producto', 'INVENTORY_MANUAL_ADJUSTMENT'].includes(log.type);
           if (isStockChanging) {
-            const isIncrease = ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento'].includes(log.type);
+            const isIncrease = log.quantity_changed !== undefined && log.quantity_changed !== null ? log.quantity_changed > 0 : ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento', 'creacion_producto'].includes(log.type);
             const qty = Number(log.quantity) || 0;
             
             if (log.quantity_after === null || log.quantity_after === undefined) {
@@ -2270,7 +2319,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const finalPrice = isNaN(parsedPrice) || parsedPrice <= 0 ? (prod.price_cost || 0) : parsedPrice;
       
       // Begin transaction to insert arrival record and update product stock & price_cost
-      const { arrivalId } = db.transaction(() => {
+      const { arrivalId, invLogId } = db.transaction(() => {
         const result = db.prepare('INSERT INTO stock_arrivals (product_id, quantity, arrival_price) VALUES (?, ?, ?)')
           .run(product_id, quantity, finalPrice);
         
@@ -2282,23 +2331,28 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         const pName = prodData?.name || 'Producto Desconocido';
         const pSku = prodData?.sku || '';
 
-        db.prepare(`
+        const auditUser = (req as any).auditUser || {};
+        const normUserId = auditUser.userId || 1;
+        const normUsername = auditUser.userName || 'admin';
+
+        const invRes = db.prepare(`
           INSERT INTO inventory_audit_logs 
-          (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes)
-          VALUES (?, ?, ?, 'ingreso_compra', ?, ?, 1, 'admin', ?, ?)
-        `).run(product_id, pName, pSku, quantity, finalPrice, `Ingreso #${result.lastInsertRowid}`, 'Ingreso de existencias por compra manual');
+          (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+          VALUES (?, ?, ?, 'ingreso_compra', ?, ?, ?, ?, ?, ?, ?)
+        `).run(product_id, pName, pSku, quantity, finalPrice, normUserId, normUsername, `Ingreso #${result.lastInsertRowid}`, 'Ingreso de existencias por compra manual', getBoliviaISOString());
         
-        return { arrivalId: result.lastInsertRowid };
+        return { arrivalId: result.lastInsertRowid, invLogId: invRes.lastInsertRowid };
       })();
 
       // Audit stock arrival
+      let sysLogId: any = null;
       try {
         const auditUser = (req as any).auditUser || {};
         const prodDataAfter = db.prepare('SELECT name, stock FROM products WHERE id = ?').get(product_id) as any;
         const pNameAfter = prodDataAfter?.name || 'Producto Desconocido';
         const currentStock = prodDataAfter?.stock || 0;
 
-        insertSystemAuditLog({
+        sysLogId = insertSystemAuditLog({
           eventType: 'ingreso_compra',
           category: 'inventario',
           module: 'inventario',
@@ -2323,10 +2377,18 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         console.warn("[Audit Error] Failed to log stock arrival audit:", auditErr.message);
       }
 
-      syncAfterWrite({
+      const syncMap: Record<string, any[]> = {
         stock_arrivals: [arrivalId],
         products: [product_id]
-      });
+      };
+      if (invLogId) {
+        syncMap.inventory_audit_logs = [invLogId];
+      }
+      if (sysLogId) {
+        syncMap.system_audit_logs = [sysLogId];
+      }
+
+      syncAfterWrite(syncMap);
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2679,11 +2741,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           const afterStock = beforeStock + item.quantity;
 
           // Log returning item to inventory audit
+          const auditUser = (req as any).auditUser || {};
+          const normUserId = auditUser.userId || user_id || 1;
+          const normUsername = auditUser.userName || username || 'admin';
           db.prepare(`
             INSERT INTO inventory_audit_logs 
-            (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes)
-            VALUES (?, ?, ?, 'ingreso_devolucion', ?, ?, ?, ?, ?, ?)
-          `).run(item.product_id, pName, pSku, item.quantity, pCost, user_id || 1, username || 'admin', `Devolución #${sale_id}`, 'Reincorporación por devolución física');
+            (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+            VALUES (?, ?, ?, 'ingreso_devolucion', ?, ?, ?, ?, ?, ?, ?)
+          `).run(item.product_id, pName, pSku, item.quantity, pCost, normUserId, normUsername, `Devolución #${sale_id}`, 'Reincorporación por devolución física', getBoliviaISOString());
 
           // Flag if there's an active inventory physical session that includes this product
           db.prepare(`
@@ -2842,249 +2907,264 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       }
     }
 
-    const safeTotal = Math.max(0, Number(total || 0));
-    const safeDiscount = Math.max(0, Number(discount || 0));
-    const safeCurrency = currency || 'BOB';
-    try {
-      const rateRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('exchange_rate') as any;
-      const currentRate = (exchange_rate !== undefined && exchange_rate !== null) ? Number(exchange_rate) : (rateRow ? parseFloat(rateRow.value) : 6.96);
+      const safeTotal = Math.max(0, Number(total || 0));
+      const safeDiscount = Math.max(0, Number(discount || 0));
+      const safeCurrency = currency || 'BOB';
+      try {
+        const rateRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('exchange_rate') as any;
+        const currentRate = (exchange_rate !== undefined && exchange_rate !== null) ? Number(exchange_rate) : (rateRow ? parseFloat(rateRow.value) : 6.96);
 
-      const saleInsert = db.prepare('INSERT INTO sales (total, discount, payment_method, user_id, client_id, exchange_rate, currency, cierre_id, notes, client_operation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)');
-      const itemInsert = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, cost, product_name_snapshot, product_sku_snapshot, subtotal_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-      const stockUpdate = db.prepare('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?');
-      
-      const auditPayloads: any[] = [];
-      const transaction = db.transaction(() => {
-        const result = saleInsert.run(safeTotal, safeDiscount, payment_method || 'Efectivo', user_id || 1, client_id || null, currentRate, safeCurrency, notes || null, clientOpId, getBoliviaISOString());
-        const saleId = result.lastInsertRowid;
-        const itemIds: any[] = [];
-        const productIds: any[] = [];
+        const saleInsert = db.prepare('INSERT INTO sales (total, discount, payment_method, user_id, client_id, exchange_rate, currency, cierre_id, notes, client_operation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)');
+        const itemInsert = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, cost, product_name_snapshot, product_sku_snapshot, subtotal_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        const stockUpdate = db.prepare('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?');
+        
+        const auditPayloads: any[] = [];
+        const transaction = db.transaction(() => {
+          const result = saleInsert.run(safeTotal, safeDiscount, payment_method || 'Efectivo', user_id || 1, client_id || null, currentRate, safeCurrency, notes || null, clientOpId, getBoliviaISOString());
+          const saleId = result.lastInsertRowid;
+          const itemIds: any[] = [];
+          const productIds: any[] = [];
+          const inventoryAuditLogIds: any[] = [];
 
-        for (const item of items) {
-          const safeQty = Math.max(1, Number(item.quantity || 1));
-          const safePrice = Math.max(0, Number(item.price || 0));
-          
-          // Fetch product's current cost in USD at moment of sale
-          const prodRow = db.prepare('SELECT name, sku, price_cost, stock FROM products WHERE id = ?').get(item.product_id) as any;
-          const currentCost = prodRow ? (prodRow.price_cost || 0) : 0;
-          const pName = prodRow ? prodRow.name : 'Producto Desconocido';
-          const pSku = prodRow ? prodRow.sku : '';
-          const beforeStock = prodRow ? prodRow.stock : 0;
-          
-          const subtotalMinor = safeQty * safePrice;
+          for (const item of items) {
+            const safeQty = Math.max(1, Number(item.quantity || 1));
+            const safePrice = Math.max(0, Number(item.price || 0));
+            
+            // Fetch product's current cost in USD at moment of sale
+            const prodRow = db.prepare('SELECT name, sku, price_cost, stock FROM products WHERE id = ?').get(item.product_id) as any;
+            const currentCost = prodRow ? (prodRow.price_cost || 0) : 0;
+            const pName = prodRow ? prodRow.name : 'Producto Desconocido';
+            const pSku = prodRow ? prodRow.sku : '';
+            const beforeStock = prodRow ? prodRow.stock : 0;
+            
+            const subtotalMinor = safeQty * safePrice;
 
-          const itemResult = itemInsert.run(saleId, item.product_id, safeQty, safePrice, currentCost, pName, pSku, subtotalMinor);
-          itemIds.push(itemResult.lastInsertRowid);
+            const itemResult = itemInsert.run(saleId, item.product_id, safeQty, safePrice, currentCost, pName, pSku, subtotalMinor);
+            itemIds.push(itemResult.lastInsertRowid);
 
-          stockUpdate.run(safeQty, item.product_id);
-          productIds.push(item.product_id);
+            stockUpdate.run(safeQty, item.product_id);
+            productIds.push(item.product_id);
 
-          const afterStock = Math.max(0, beforeStock - safeQty);
+            const afterStock = Math.max(0, beforeStock - safeQty);
 
-          // Get username or cashier doing this
+            // Get username or cashier doing this
+            const userRow = db.prepare('SELECT username, role FROM users WHERE id = ?').get(user_id || 1) as any;
+            const uName = userRow?.username || 'Cajero';
+            const uRole = userRow?.role || 'cajero';
+
+            // Log to inventory_audit_logs
+            const auditUser = (req as any).auditUser || {};
+            const normUserId = auditUser.userId || user_id || 1;
+            const normUsername = auditUser.userName || uName || 'Cajero';
+
+            const invRes = db.prepare(`
+              INSERT INTO inventory_audit_logs 
+              (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+              VALUES (?, ?, ?, 'salida_venta', ?, ?, ?, ?, ?, ?, ?)
+            `).run(item.product_id, pName, pSku, safeQty, safePrice, normUserId, normUsername, `Venta #${saleId}`, 'Salida por venta en mostrador', getBoliviaISOString());
+            inventoryAuditLogIds.push(invRes.lastInsertRowid);
+
+            // Flag if there's an active inventory physical session that includes this product
+            db.prepare(`
+              UPDATE inventory_count_items
+              SET had_movements_during_count = 1
+              WHERE product_id = ? AND inventory_count_id IN (
+                SELECT id FROM inventory_counts WHERE status = 'en_progreso'
+              )
+            `).run(item.product_id);
+
+            auditPayloads.push({
+              eventType: 'salida_venta',
+              category: 'ventas',
+              module: 'ventas',
+              action: 'Salida de mercadería por venta',
+              severity: 'info',
+              entityType: 'producto',
+              entityId: item.product_id,
+              entityName: pName,
+              userId: user_id || 1,
+              userName: uName,
+              userRole: uRole,
+              quantityBefore: beforeStock,
+              quantityChanged: -safeQty,
+              quantityAfter: afterStock,
+              priceBefore: safePrice,
+              priceAfter: safePrice,
+              reason: notes || 'Salida por venta en mostrador',
+              relatedTicket: `Venta #${saleId}`,
+              relatedProductId: item.product_id,
+              relatedSaleId: saleId,
+              status: 'success'
+            });
+          }
+
+          // --- CAJA ACUMULATIVA DE VENDEDORES (PARTE 4) ---
+          const activeUserId = Number(req.headers['x-user-id']) || Number(user_id) || 1;
+          const sellerRow = db.prepare('SELECT username FROM users WHERE id = ?').get(activeUserId) as any;
+          const sName = sellerRow?.username || 'Cajero';
+
+          // Ensure seller's cash account exists
+          db.prepare(`
+            INSERT OR IGNORE INTO cash_accounts (seller_id, seller_username, current_balance)
+            VALUES (?, ?, 0.0)
+          `).run(activeUserId, sName);
+
+          // Calculate the actual money received for the cash drawer (only initial abono for credit sales)
+          const receivedAmount = payment_method === 'Crédito' ? Math.min(safeTotal, Math.max(0, Number(initial_abono || 0))) : safeTotal;
+          const receivedAmountInBs = safeCurrency === 'USD' ? (receivedAmount * currentRate) : receivedAmount;
+
+          // Record cash movement (pending settlement)
+          const movResult = db.prepare(`
+            INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes)
+            VALUES (?, ?, 'venta', ?, ?, ?, 'pendiente', ?)
+          `).run(
+            activeUserId,
+            saleId,
+            receivedAmount,
+            safeCurrency,
+            payment_method || 'Efectivo',
+            `Venta registrada #${saleId}`
+          );
+          const movId = movResult.lastInsertRowid;
+
+          // Update seller's cash account balance (always in BOB/Bs)
+          db.prepare(`
+            UPDATE cash_accounts
+            SET current_balance = current_balance + ?, updated_at = CURRENT_TIMESTAMP
+            WHERE seller_id = ?
+          `).run(receivedAmountInBs, activeUserId);
+
+          const accRow = db.prepare('SELECT id FROM cash_accounts WHERE seller_id = ?').get(activeUserId) as any;
+          const accId = accRow?.id;
+
+          let arId: any = null;
+          let cpId: any = null;
+
+          // --- CLIENT FIDELIZATION & REWARDS (SUGERENCIA 3) ---
+          if (client_id) {
+            // 1. Deduct redeemed points
+            const safeRedeemed = Math.max(0, Number(redeemed_points || 0));
+            if (safeRedeemed > 0) {
+              db.prepare('UPDATE clients SET points = MAX(0, points - ?) WHERE id = ?').run(safeRedeemed, client_id);
+            }
+            // 2. Accumulate points: 1 point per 10 Bs. spent on this purchase (converted if in USD)
+            const spentInBs = safeCurrency === 'USD' ? (safeTotal * currentRate) : safeTotal;
+            const pointsEarned = Math.floor(spentInBs / 10);
+            if (pointsEarned > 0) {
+              db.prepare('UPDATE clients SET points = points + ? WHERE id = ?').run(pointsEarned, client_id);
+            }
+          }
+
+          // Si es venta al crédito, registramos la cuenta por cobrar
+          if (payment_method === 'Crédito') {
+            const abonoValue = Math.min(safeTotal, Math.max(0, Number(initial_abono || 0)));
+            const debtValue = Math.max(0, safeTotal - abonoValue);
+            const statusVal = debtValue <= 0 ? 'pagado' : 'pendiente';
+
+            const arResult = db.prepare(`
+              INSERT INTO accounts_receivable (sale_id, client_id, total_amount, paid_amount, remaining_amount, status, due_date)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `).run(saleId, client_id, safeTotal, abonoValue, debtValue, statusVal, due_date || null);
+            arId = arResult.lastInsertRowid;
+
+            // Si el cliente hizo un abono inicial, registramos el pago
+            if (abonoValue > 0) {
+              const cpResult = db.prepare(`
+                INSERT INTO credit_payments (account_receivable_id, amount, payment_method, user_id, notes)
+                VALUES (?, ?, ?, ?, ?)
+              `).run(arId, abonoValue, 'Efectivo', user_id || 1, 'Abono inicial de la venta');
+              cpId = cpResult.lastInsertRowid;
+            }
+          }
+          return { saleId, itemIds, productIds, arId, cpId, accId, movId, inventoryAuditLogIds };
+        });
+
+        const { saleId, itemIds, productIds, arId, cpId, accId, movId, inventoryAuditLogIds } = transaction();
+
+        // Write advanced audit logs for each sold product item
+        const systemAuditLogIds: any[] = [];
+        const auditUser = (req as any).auditUser || {};
+        for (const payload of auditPayloads) {
+          try {
+            const sysId = insertSystemAuditLog({
+              ...payload,
+              userId: auditUser.userId || payload.userId,
+              userName: auditUser.userName || payload.userName,
+              userRole: auditUser.userRole || payload.userRole
+            });
+            if (sysId) {
+              systemAuditLogIds.push(sysId);
+            }
+          } catch (auditErr: any) {
+            console.warn("[Audit Error] Failed to write advanced sold item audit:", auditErr.message);
+          }
+        }
+
+        // Audit sale registration
+        try {
           const userRow = db.prepare('SELECT username, role FROM users WHERE id = ?').get(user_id || 1) as any;
           const uName = userRow?.username || 'Cajero';
           const uRole = userRow?.role || 'cajero';
 
-          // Log to inventory_audit_logs
-          db.prepare(`
-            INSERT INTO inventory_audit_logs 
-            (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes)
-            VALUES (?, ?, ?, 'salida_venta', ?, ?, ?, ?, ?, ?)
-          `).run(item.product_id, pName, pSku, safeQty, safePrice, user_id || 1, uName, `Venta #${saleId}`, 'Salida por venta en mostrador');
-
-          // Flag if there's an active inventory physical session that includes this product
-          db.prepare(`
-            UPDATE inventory_count_items
-            SET had_movements_during_count = 1
-            WHERE product_id = ? AND inventory_count_id IN (
-              SELECT id FROM inventory_counts WHERE status = 'en_progreso'
-            )
-          `).run(item.product_id);
-
-          auditPayloads.push({
+          const mainSysId = insertSystemAuditLog({
             eventType: 'salida_venta',
             category: 'ventas',
             module: 'ventas',
-            action: 'Salida de mercadería por venta',
+            action: 'Registro de Venta',
             severity: 'info',
-            entityType: 'producto',
-            entityId: item.product_id,
-            entityName: pName,
-            userId: user_id || 1,
-            userName: uName,
-            userRole: uRole,
-            quantityBefore: beforeStock,
-            quantityChanged: -safeQty,
-            quantityAfter: afterStock,
-            priceBefore: safePrice,
-            priceAfter: safePrice,
-            reason: notes || 'Salida por venta en mostrador',
+            entityType: 'venta',
+            entityId: saleId,
+            entityName: `Ticket Venta #${saleId}`,
+            userId: auditUser.userId || user_id,
+            userName: auditUser.userName || uName,
+            userRole: auditUser.userRole || uRole,
+            priceAfter: safeTotal,
+            reason: notes || 'Venta realizada en el mostrador del POS',
             relatedTicket: `Venta #${saleId}`,
-            relatedProductId: item.product_id,
-            relatedSaleId: saleId,
+            afterData: {
+              total: safeTotal,
+              discount: safeDiscount,
+              payment_method,
+              client_id,
+              currency: safeCurrency,
+              exchange_rate: currentRate,
+              item_count: items.length
+            },
             status: 'success'
           });
-        }
-
-        // --- CAJA ACUMULATIVA DE VENDEDORES (PARTE 4) ---
-        const activeUserId = Number(req.headers['x-user-id']) || Number(user_id) || 1;
-        const sellerRow = db.prepare('SELECT username FROM users WHERE id = ?').get(activeUserId) as any;
-        const sName = sellerRow?.username || 'Cajero';
-
-        // Ensure seller's cash account exists
-        db.prepare(`
-          INSERT OR IGNORE INTO cash_accounts (seller_id, seller_username, current_balance)
-          VALUES (?, ?, 0.0)
-        `).run(activeUserId, sName);
-
-        // Calculate the actual money received for the cash drawer (only initial abono for credit sales)
-        const receivedAmount = payment_method === 'Crédito' ? Math.min(safeTotal, Math.max(0, Number(initial_abono || 0))) : safeTotal;
-        const receivedAmountInBs = safeCurrency === 'USD' ? (receivedAmount * currentRate) : receivedAmount;
-
-        // Record cash movement (pending settlement)
-        const movResult = db.prepare(`
-          INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes)
-          VALUES (?, ?, 'venta', ?, ?, ?, 'pendiente', ?)
-        `).run(
-          activeUserId,
-          saleId,
-          receivedAmount,
-          safeCurrency,
-          payment_method || 'Efectivo',
-          `Venta registrada #${saleId}`
-        );
-        const movId = movResult.lastInsertRowid;
-
-        // Update seller's cash account balance (always in BOB/Bs)
-        db.prepare(`
-          UPDATE cash_accounts
-          SET current_balance = current_balance + ?, updated_at = CURRENT_TIMESTAMP
-          WHERE seller_id = ?
-        `).run(receivedAmountInBs, activeUserId);
-
-        const accRow = db.prepare('SELECT id FROM cash_accounts WHERE seller_id = ?').get(activeUserId) as any;
-        const accId = accRow?.id;
-
-        let arId: any = null;
-        let cpId: any = null;
-
-        // --- CLIENT FIDELIZATION & REWARDS (SUGERENCIA 3) ---
-        if (client_id) {
-          // 1. Deduct redeemed points
-          const safeRedeemed = Math.max(0, Number(redeemed_points || 0));
-          if (safeRedeemed > 0) {
-            db.prepare('UPDATE clients SET points = MAX(0, points - ?) WHERE id = ?').run(safeRedeemed, client_id);
+          if (mainSysId) {
+            systemAuditLogIds.push(mainSysId);
           }
-          // 2. Accumulate points: 1 point per 10 Bs. spent on this purchase (converted if in USD)
-          const spentInBs = safeCurrency === 'USD' ? (safeTotal * currentRate) : safeTotal;
-          const pointsEarned = Math.floor(spentInBs / 10);
-          if (pointsEarned > 0) {
-            db.prepare('UPDATE clients SET points = points + ? WHERE id = ?').run(pointsEarned, client_id);
-          }
-        }
-
-        // Si es venta al crédito, registramos la cuenta por cobrar
-        if (payment_method === 'Crédito') {
-          const abonoValue = Math.min(safeTotal, Math.max(0, Number(initial_abono || 0)));
-          const debtValue = Math.max(0, safeTotal - abonoValue);
-          const statusVal = debtValue <= 0 ? 'pagado' : 'pendiente';
-
-          const arResult = db.prepare(`
-            INSERT INTO accounts_receivable (sale_id, client_id, total_amount, paid_amount, remaining_amount, status, due_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(saleId, client_id, safeTotal, abonoValue, debtValue, statusVal, due_date || null);
-          arId = arResult.lastInsertRowid;
-
-          // Si el cliente hizo un abono inicial, registramos el pago
-          if (abonoValue > 0) {
-            const cpResult = db.prepare(`
-              INSERT INTO credit_payments (account_receivable_id, amount, payment_method, user_id, notes)
-              VALUES (?, ?, ?, ?, ?)
-            `).run(arId, abonoValue, 'Efectivo', user_id || 1, 'Abono inicial de la venta');
-            cpId = cpResult.lastInsertRowid;
-          }
-        }
-        return { saleId, itemIds, productIds, arId, cpId, accId, movId };
-      });
-
-      const { saleId, itemIds, productIds, arId, cpId, accId, movId } = transaction();
-
-      // Write advanced audit logs for each sold product item
-      const auditUser = (req as any).auditUser || {};
-      for (const payload of auditPayloads) {
-        try {
-          insertSystemAuditLog({
-            ...payload,
-            userId: auditUser.userId || payload.userId,
-            userName: auditUser.userName || payload.userName,
-            userRole: auditUser.userRole || payload.userRole
-          });
         } catch (auditErr: any) {
-          console.warn("[Audit Error] Failed to write advanced sold item audit:", auditErr.message);
+          console.warn("[Audit Error] Failed to log sale audit:", auditErr.message);
         }
-      }
 
-      // Audit sale registration
-      try {
-        const userRow = db.prepare('SELECT username, role FROM users WHERE id = ?').get(user_id || 1) as any;
-        const uName = userRow?.username || 'Cajero';
-        const uRole = userRow?.role || 'cajero';
+        for (const productId of productIds) {
+          checkAndNotifyLowStock(productId);
+        }
 
-        insertSystemAuditLog({
-          eventType: 'salida_venta',
-          category: 'ventas',
-          module: 'ventas',
-          action: 'Registro de Venta',
-          severity: 'info',
-          entityType: 'venta',
-          entityId: saleId,
-          entityName: `Ticket Venta #${saleId}`,
-          userId: auditUser.userId || user_id,
-          userName: auditUser.userName || uName,
-          userRole: auditUser.userRole || uRole,
-          priceAfter: safeTotal,
-          reason: notes || 'Venta realizada en el mostrador del POS',
-          relatedTicket: `Venta #${saleId}`,
-          afterData: {
-            total: safeTotal,
-            discount: safeDiscount,
-            payment_method,
-            client_id,
-            currency: safeCurrency,
-            exchange_rate: currentRate,
-            item_count: items.length
-          },
-          status: 'success'
-        });
-      } catch (auditErr: any) {
-        console.warn("[Audit Error] Failed to log sale audit:", auditErr.message);
-      }
+        // Build targeted sync map
+        const syncMap: Record<string, any[]> = {
+          sales: [saleId],
+          sale_items: itemIds,
+          products: productIds,
+          cash_accounts: accId ? [accId] : [],
+          cash_movements: movId ? [movId] : [],
+          inventory_audit_logs: inventoryAuditLogIds,
+          system_audit_logs: systemAuditLogIds
+        };
+        if (client_id) {
+          syncMap.clients = [client_id];
+        }
+        if (arId) {
+          syncMap.accounts_receivable = [arId];
+        }
+        if (cpId) {
+          syncMap.credit_payments = [cpId];
+        }
 
-      for (const productId of productIds) {
-        checkAndNotifyLowStock(productId);
-      }
-
-      // Build targeted sync map
-      const syncMap: Record<string, any[]> = {
-        sales: [saleId],
-        sale_items: itemIds,
-        products: productIds,
-        cash_accounts: accId ? [accId] : [],
-        cash_movements: movId ? [movId] : []
-      };
-      if (client_id) {
-        syncMap.clients = [client_id];
-      }
-      if (arId) {
-        syncMap.accounts_receivable = [arId];
-      }
-      if (cpId) {
-        syncMap.credit_payments = [cpId];
-      }
-
-      syncAfterWrite(syncMap);
-      res.json({ success: true, saleId });
+        syncAfterWrite(syncMap);
+        res.json({ success: true, saleId });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -3453,11 +3533,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           const uRole = userRow?.role || 'cajero';
 
           // Log to inventory_audit_logs
+          const auditUser = (req as any).auditUser || {};
+          const normUserId = auditUser.userId || user_id || 1;
+          const normUsername = auditUser.userName || uName || 'Cajero';
           db.prepare(`
             INSERT INTO inventory_audit_logs 
-            (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes)
-            VALUES (?, ?, ?, 'salida_venta', ?, ?, ?, ?, ?, ?)
-          `).run(item.product_id, pName, pSku, item.quantity, item.price, user_id || 1, uName, `Venta #${finalSaleId}`, 'Salida por venta (Pedido Pendiente finalizado)');
+            (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+            VALUES (?, ?, ?, 'salida_venta', ?, ?, ?, ?, ?, ?, ?)
+          `).run(item.product_id, pName, pSku, item.quantity, item.price, normUserId, normUsername, `Venta #${finalSaleId}`, 'Salida por venta (Pedido Pendiente finalizado)', getBoliviaISOString());
 
           auditPayloads.push({
             eventType: 'salida_venta',
@@ -4629,10 +4712,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               const logType = item.difference > 0 ? 'ajuste_incremento' : 'ajuste_decremento';
               const absQty = Math.abs(item.difference);
               
+              const auditUser = (req as any).auditUser || {};
+              const normUserId = auditUser.userId || admin_id || 1;
+              const normUsername = auditUser.userName || admin_username || 'admin';
               db.prepare(`
                 INSERT INTO inventory_audit_logs 
-                (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `).run(
                 item.product_id, 
                 p.name, 
@@ -4640,10 +4726,11 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
                 logType, 
                 absQty, 
                 p.price_cost || 0, 
-                admin_id || 1, 
-                admin_username || 'admin', 
+                normUserId, 
+                normUsername, 
                 `Conciliación #${id}`, 
-                `Ajuste por control físico de inventario (De ${oldStock} a ${newStock} pz). Obs: ${notes || 'Conforme'}`
+                `Ajuste por control físico de inventario (De ${oldStock} a ${newStock} pz). Obs: ${notes || 'Conforme'}`,
+                getBoliviaISOString()
               );
 
               // Add professional system audit log

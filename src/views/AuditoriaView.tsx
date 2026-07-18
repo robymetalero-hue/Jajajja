@@ -119,6 +119,17 @@ export default function AuditoriaView() {
     }, [page, limit, categoryFilter, severityFilter, statusFilter, userFilter, startDate, endDate, productSearch, activeTab]);
 
     useEffect(() => {
+        const handleInventoryOperation = () => {
+            fetchLogs();
+            fetchProducts();
+        };
+        window.addEventListener('inventory_operation', handleInventoryOperation);
+        return () => {
+            window.removeEventListener('inventory_operation', handleInventoryOperation);
+        };
+    }, [page, limit, categoryFilter, severityFilter, statusFilter, userFilter, startDate, endDate, productSearch, activeTab]);
+
+    useEffect(() => {
         fetchProducts();
     }, []);
 
