@@ -74,10 +74,7 @@ export const SYNC_TABLES = [
   'pending_sale_items',
   'accounts_receivable',
   'credit_payments',
-  'pending_sale_payments',
-  'cash_accounts',
-  'cash_movements',
-  'cash_settlements'
+  'pending_sale_payments'
 ];
 
 let isPullingInProgress = false;

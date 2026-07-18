@@ -4570,29 +4570,17 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
     }
   });
 
-  // Liquidar/Cerrar periodo de acumulación y reiniciar caja del vendedor a cero (Solo Administrador)
+  // Liquidar/Cerrar periodo de acumulación y reiniciar caja del vendedor a cero (Solo Administrador / Propietario)
   app.post("/api/cash-accounts/:sellerId/settle", (req, res) => {
     const sellerId = Number(req.params.sellerId);
     const { admin_id, admin_username, delivered_amount, notes } = req.body;
     
-    // Secure backend check: Only admin, administrador, propietario or seller with reset_own_cash permission can settle cash balances
+    // Secure backend check: Strictly restrict to admin, administrador or propietario
     const userRole = req.headers['x-user-role'] || req.query.user_role;
     const userId = Number(req.headers['x-user-id'] || req.query.user_id);
-    const userPermissionsRaw = req.headers['x-user-permissions'];
-    let hasResetOwnPermission = false;
-    try {
-      if (userPermissionsRaw) {
-        const parsed = JSON.parse(userPermissionsRaw as string);
-        if (parsed?.reset_own_cash) {
-          hasResetOwnPermission = true;
-        }
-      }
-    } catch (e) {}
 
-    const isSelfSettle = String(userId) === String(sellerId) && hasResetOwnPermission;
-
-    if (userRole !== 'admin' && userRole !== 'administrador' && userRole !== 'propietario' && !isSelfSettle) {
-      return res.status(403).json({ error: "Acceso denegado: No tienes autorización para liquidar o resetear esta cuenta de caja." });
+    if (userRole !== 'admin' && userRole !== 'administrador' && userRole !== 'propietario') {
+      return res.status(403).json({ error: "Acceso denegado: Solo el administrador o propietario puede liquidar o resetear cuentas de caja." });
     }
 
     try {

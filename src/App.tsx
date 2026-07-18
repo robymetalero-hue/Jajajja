@@ -560,8 +560,8 @@ function AppLayout() {
                                     transition={{ type: "spring", stiffness: 350, damping: 25 }}
                                 />
                             )}
-                            <Sparkles size={11} className="relative z-10 text-pink-400 animate-pulse" />
-                            <span className="relative z-10">RGB</span>
+                            <Sparkles size={11} className="relative z-10 text-pink-400 animate-pulse animate-bounce" />
+                            <span className="relative z-10 font-black tracking-widest text-shadow shadow-pink-500/50">Modo RGB</span>
                         </button>
                     </div>
                 </div>
@@ -744,8 +744,8 @@ function AppLayout() {
                                     transition={{ type: "spring", stiffness: 350, damping: 25 }}
                                 />
                             )}
-                            <Sparkles size={11} className="relative z-10 text-pink-400 animate-pulse" />
-                            <span className="relative z-10">RGB</span>
+                            <Sparkles size={11} className="relative z-10 text-pink-400 animate-pulse animate-bounce" />
+                            <span className="relative z-10 font-black tracking-widest text-shadow shadow-pink-500/50">Modo RGB</span>
                         </button>
                     </div>
                 </div>
