@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { hasPermission } from '../utils/permissions';
-import { Plus, Edit, Trash2, ShieldAlert, AlertTriangle, Check, X, Tag, ShoppingBag, Eye, RefreshCw, Camera, ChevronDown, ChevronRight, Maximize2, Search, History, Sparkles, ArrowUpRight, Download, ArrowDownLeft, Clock, User, ClipboardCheck, FileSpreadsheet } from 'lucide-react';
+import { Plus, Edit, Trash2, ShieldAlert, AlertTriangle, Check, X, Tag, ShoppingBag, Eye, RefreshCw, Camera, ChevronDown, ChevronRight, Maximize2, Search, History, Sparkles, ArrowUpRight, Download, ArrowDownLeft, Clock, User, ClipboardCheck, FileSpreadsheet, DollarSign } from 'lucide-react';
 import { Product } from '../types';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import LowStockNotificationSystem from '../components/LowStockNotificationSystem';
@@ -43,7 +43,7 @@ export default function Inventory() {
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
     // Product History tracking states (Ingresos/Salidas and Registro de Ventas)
-    const [selectedHistoryTab, setSelectedHistoryTab] = useState<'ingresos' | 'salidas' | 'ventas'>('ingresos');
+    const [selectedHistoryTab, setSelectedHistoryTab] = useState<'todos' | 'ingresos' | 'salidas' | 'precios' | 'cantidades'>('todos');
     const [productStockHistory, setProductStockHistory] = useState<any[]>([]);
     const [productSalesHistory, setProductSalesHistory] = useState<any[]>([]);
     const [productAuditHistory, setProductAuditHistory] = useState<any[]>([]);
@@ -79,7 +79,7 @@ export default function Inventory() {
     useEffect(() => {
         if (expandedProductId) {
             fetchProductHistories(expandedProductId);
-            setSelectedHistoryTab('ingresos');
+            setSelectedHistoryTab('todos');
         } else {
             setProductStockHistory([]);
             setProductSalesHistory([]);
@@ -90,35 +90,76 @@ export default function Inventory() {
     const renderProductHistoryLogs = (pId: number) => {
         const isLoading = loadingHistoryProductId === pId;
 
+        const logsAll = productAuditHistory;
+
         const logsIngresos = productAuditHistory.filter(log => 
             ['ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento'].includes(log.type)
         );
 
         const logsSalidas = productAuditHistory.filter(log => 
-            ['ajuste_decremento'].includes(log.type)
+            ['salida_venta', 'ajuste_decremento'].includes(log.type)
         );
 
-        const logsVentas = productAuditHistory.filter(log => 
-            ['salida_venta'].includes(log.type)
+        const logsPrecios = productAuditHistory.filter(log => 
+            ['cambio_precio', 'cambio_costo'].includes(log.type) ||
+            (log.changed_fields && (log.changed_fields.price_unit !== undefined || log.changed_fields.price_bulk !== undefined || log.changed_fields.price_cost !== undefined)) ||
+            log.price_before !== null && log.price_after !== null && log.price_before !== log.price_after
         );
+
+        const logsCantidades = productAuditHistory.filter(log => 
+            ['ajuste_incremento', 'ajuste_decremento'].includes(log.type) || 
+            (log.quantity_before !== null && log.quantity_after !== null && log.quantity_before !== log.quantity_after) ||
+            ['ingreso_compra', 'ingreso_devolucion', 'salida_venta'].includes(log.type)
+        );
+
+        let filteredLogs: any[] = [];
+        if (selectedHistoryTab === 'todos') {
+            filteredLogs = logsAll;
+        } else if (selectedHistoryTab === 'ingresos') {
+            filteredLogs = logsIngresos;
+        } else if (selectedHistoryTab === 'salidas') {
+            filteredLogs = logsSalidas;
+        } else if (selectedHistoryTab === 'precios') {
+            filteredLogs = logsPrecios;
+        } else if (selectedHistoryTab === 'cantidades') {
+            filteredLogs = logsCantidades;
+        }
 
         return (
-            <div className="mt-4 p-4 bg-slate-50/50 dark:bg-[#070c14]/30 rounded-2xl border border-slate-200/50 dark:border-slate-850 flex flex-col gap-4 animate-in fade-in duration-200">
-                {/* Header and Tabs */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-200/40 dark:border-slate-850/50 pb-3">
-                    <div className="flex items-center gap-2">
-                        <History size={15} className="text-indigo-500" />
-                        <span className="text-[11px] font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider">Historial & Trazabilidad del Producto</span>
+            <div className="mt-4 p-5 bg-slate-50/70 dark:bg-[#070c14]/40 rounded-3xl border border-slate-200/60 dark:border-slate-850 flex flex-col gap-4 animate-in fade-in duration-200">
+                {/* Header and Filter Tabs */}
+                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5 border-b border-slate-200/50 dark:border-slate-800/60 pb-4">
+                    <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                            <History size={16} className="text-indigo-500 shrink-0" />
+                            <span className="text-xs font-black text-slate-850 dark:text-slate-100 uppercase tracking-wider">
+                                Auditoría, Kárdex & Trazabilidad Completa
+                            </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                            Historial pormenorizado de transacciones, ingresos, salidas y modificaciones de precios.
+                        </p>
                     </div>
 
-                    {/* Elegant segmented pill buttons for tabs */}
-                    <div className="flex bg-slate-105 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800/80 shrink-0">
+                    {/* Filter Segmented Pills */}
+                    <div className="flex flex-wrap gap-1 bg-slate-100 dark:bg-slate-900/90 p-1 rounded-2xl border border-slate-200/50 dark:border-slate-800/80">
+                        <button
+                            type="button"
+                            onClick={() => setSelectedHistoryTab('todos')}
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+                                selectedHistoryTab === 'todos'
+                                    ? 'bg-white dark:bg-[#12192d] text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200/20'
+                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'
+                            }`}
+                        >
+                            Todos ({logsAll.length})
+                        </button>
                         <button
                             type="button"
                             onClick={() => setSelectedHistoryTab('ingresos')}
-                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
                                 selectedHistoryTab === 'ingresos'
-                                    ? 'bg-white dark:bg-[#12192d] text-emerald-600 dark:text-emerald-400 shadow-sm'
+                                    ? 'bg-white dark:bg-[#12192d] text-emerald-600 dark:text-emerald-400 shadow-sm border border-slate-200/20'
                                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'
                             }`}
                         >
@@ -127,9 +168,9 @@ export default function Inventory() {
                         <button
                             type="button"
                             onClick={() => setSelectedHistoryTab('salidas')}
-                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
                                 selectedHistoryTab === 'salidas'
-                                    ? 'bg-white dark:bg-[#12192d] text-amber-600 dark:text-amber-400 shadow-sm'
+                                    ? 'bg-white dark:bg-[#12192d] text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/20'
                                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'
                             }`}
                         >
@@ -137,168 +178,281 @@ export default function Inventory() {
                         </button>
                         <button
                             type="button"
-                            onClick={() => setSelectedHistoryTab('ventas')}
-                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
-                                selectedHistoryTab === 'ventas'
-                                    ? 'bg-white dark:bg-[#12192d] text-indigo-600 dark:text-indigo-400 shadow-sm'
+                            onClick={() => setSelectedHistoryTab('precios')}
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+                                selectedHistoryTab === 'precios'
+                                    ? 'bg-white dark:bg-[#12192d] text-cyan-600 dark:text-cyan-400 shadow-sm border border-slate-200/20'
                                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'
                             }`}
                         >
-                            Ventas ({logsVentas.length})
+                            Precios/Costos ({logsPrecios.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setSelectedHistoryTab('cantidades')}
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+                                selectedHistoryTab === 'cantidades'
+                                    ? 'bg-white dark:bg-[#12192d] text-pink-600 dark:text-pink-400 shadow-sm border border-slate-200/20'
+                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'
+                            }`}
+                        >
+                            Cantidades ({logsCantidades.length})
                         </button>
                     </div>
                 </div>
 
                 {isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-8 gap-2">
-                        <RefreshCw size={20} className="text-indigo-500 animate-spin" />
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cargando registros históricos...</span>
+                    <div className="flex flex-col items-center justify-center py-10 gap-2.5">
+                        <RefreshCw size={22} className="text-indigo-500 animate-spin" />
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                            Recuperando trazabilidad del kárdex...
+                        </span>
                     </div>
-                ) : selectedHistoryTab === 'ingresos' ? (
-                    <div className="flex flex-col gap-2">
-                        {logsIngresos.length === 0 ? (
-                            <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                                No se registran ingresos (compras/devoluciones/ajustes) para este producto.
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1">
-                                {logsIngresos.map((log) => {
-                                    const typeLabel = log.type === 'ingreso_compra' ? 'Compra de Existencias' 
-                                        : log.type === 'ingreso_devolucion' ? 'Reincorporación (Devolución)' 
-                                        : 'Ajuste Manual (+';
-                                    return (
-                                        <div 
-                                            key={log.id}
-                                            className="flex items-center justify-between p-3 bg-white dark:bg-[#0c111e] rounded-xl border border-slate-150 dark:border-slate-850/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-800 transition duration-150"
-                                        >
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="p-1.5 rounded-lg shrink-0 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/5 dark:text-emerald-400">
-                                                    <ArrowDownLeft size={13} />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-extrabold text-slate-800 dark:text-slate-200 uppercase leading-none">
-                                                        {typeLabel}
-                                                    </span>
-                                                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold mt-1">{log.notes || 'Ingreso de inventario'}</p>
-                                                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-[8px] text-slate-400 font-semibold mt-1">
-                                                        <span className="font-mono text-slate-450 dark:text-slate-500">{log.reference || `ID #${log.id}`}</span>
-                                                        <span className="hidden sm:inline">•</span>
-                                                        <span className="flex items-center gap-0.5"><Clock size={8} /> {new Date(log.created_at).toLocaleString()}</span>
-                                                        <span className="hidden sm:inline">•</span>
-                                                        <span className="flex items-center gap-0.5 uppercase"><User size={8} /> {log.username || 'admin'}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-col items-end shrink-0">
-                                                <span className="text-[11px] font-black font-mono text-emerald-600">
-                                                    +{log.quantity} pz
-                                                </span>
-                                                <span className="text-[8px] text-slate-450 dark:text-slate-500 font-mono font-bold mt-0.5">
-                                                    Valuado: ${(log.price || 0).toFixed(2)} USD
-                                                </span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                ) : selectedHistoryTab === 'salidas' ? (
-                    <div className="flex flex-col gap-2">
-                        {logsSalidas.length === 0 ? (
-                            <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                                No se registran salidas manuales o ajustes de reducción para este producto.
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1">
-                                {logsSalidas.map((log) => {
-                                    return (
-                                        <div 
-                                            key={log.id}
-                                            className="flex items-center justify-between p-3 bg-white dark:bg-[#0c111e] rounded-xl border border-slate-150 dark:border-slate-850/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-800 transition duration-150"
-                                        >
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="p-1.5 rounded-lg shrink-0 bg-amber-500/10 text-amber-600 dark:bg-amber-500/5 dark:text-amber-400">
-                                                    <ArrowUpRight size={13} />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-extrabold text-slate-800 dark:text-slate-200 uppercase leading-none">
-                                                        Retiro / Ajuste Negativo
-                                                    </span>
-                                                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold mt-1">{log.notes || 'Retiro de existencias'}</p>
-                                                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-[8px] text-slate-400 font-semibold mt-1">
-                                                        <span className="font-mono text-slate-450 dark:text-slate-500">{log.reference || `ID #${log.id}`}</span>
-                                                        <span className="hidden sm:inline">•</span>
-                                                        <span className="flex items-center gap-0.5"><Clock size={8} /> {new Date(log.created_at).toLocaleString()}</span>
-                                                        <span className="hidden sm:inline">•</span>
-                                                        <span className="flex items-center gap-0.5 uppercase"><User size={8} /> {log.username || 'admin'}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-col items-end shrink-0">
-                                                <span className="text-[11px] font-black font-mono text-amber-600">
-                                                    -{log.quantity} pz
-                                                </span>
-                                                <span className="text-[8px] text-slate-450 dark:text-slate-500 font-mono font-bold mt-0.5">
-                                                    Costo: ${(log.price || 0).toFixed(2)} USD
-                                                </span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                ) : filteredLogs.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400 dark:text-slate-500 text-[9.5px] font-black uppercase tracking-wider bg-white dark:bg-[#080d16]/30 border border-dashed border-slate-200 dark:border-slate-850 p-6 rounded-2xl">
+                        No se encontraron registros de movimiento de tipo &ldquo;{selectedHistoryTab}&rdquo; para este producto.
                     </div>
                 ) : (
-                    <div className="flex flex-col gap-2">
-                        {logsVentas.length === 0 ? (
-                            <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                                No se registran ventas para este producto.
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1">
-                                {logsVentas.map((log) => {
-                                    return (
-                                        <div 
-                                            key={log.id}
-                                            className="flex items-center justify-between p-3 bg-white dark:bg-[#0c111e] rounded-xl border border-slate-150 dark:border-slate-850/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-800 transition duration-150"
-                                        >
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="p-1.5 rounded-lg shrink-0 bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/5 dark:text-indigo-400">
-                                                    <ShoppingBag size={13} />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-extrabold text-slate-800 dark:text-slate-200 uppercase leading-none">
-                                                        {log.reference || 'Venta Comercial'}
+                    <div className="flex flex-col gap-2.5 max-h-96 overflow-y-auto pr-1">
+                        {filteredLogs.map((log) => {
+                            // Identify action type and styles
+                            let actionLabel = 'Modificación de Producto';
+                            let actionBadgeClass = 'bg-slate-100 text-slate-600 dark:bg-slate-850/80 dark:text-slate-300';
+                            let iconEl = <Tag size={13} />;
+                            let sideDiffText = '';
+                            let sideDiffClass = 'text-slate-500';
+
+                            if (log.type === 'ingreso_compra') {
+                                actionLabel = 'Compra de Existencias';
+                                actionBadgeClass = 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/5 dark:text-emerald-400 border border-emerald-500/20';
+                                iconEl = <ArrowDownLeft size={13} />;
+                                sideDiffText = `+${log.quantity} pz`;
+                                sideDiffClass = 'text-emerald-600 dark:text-emerald-400';
+                            } else if (log.type === 'ingreso_devolucion') {
+                                actionLabel = 'Devolución de Cliente';
+                                actionBadgeClass = 'bg-teal-500/10 text-teal-600 dark:bg-teal-500/5 dark:text-teal-400 border border-teal-500/20';
+                                iconEl = <RefreshCw size={13} />;
+                                sideDiffText = `+${log.quantity} pz`;
+                                sideDiffClass = 'text-teal-600 dark:text-teal-400';
+                            } else if (log.type === 'ajuste_incremento') {
+                                actionLabel = 'Ajuste de Inventario (+)';
+                                actionBadgeClass = 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/5 dark:text-emerald-400 border border-emerald-500/20';
+                                iconEl = <ArrowDownLeft size={13} />;
+                                sideDiffText = `+${log.quantity} pz`;
+                                sideDiffClass = 'text-emerald-600 dark:text-emerald-400';
+                            } else if (log.type === 'ajuste_decremento') {
+                                actionLabel = 'Ajuste de Inventario (-)';
+                                actionBadgeClass = 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/5 dark:text-amber-400 border border-amber-500/20';
+                                iconEl = <ArrowUpRight size={13} />;
+                                sideDiffText = `-${log.quantity} pz`;
+                                sideDiffClass = 'text-amber-600 dark:text-amber-400';
+                            } else if (log.type === 'salida_venta') {
+                                actionLabel = 'Venta Realizada';
+                                actionBadgeClass = 'bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/5 dark:text-indigo-400 border border-indigo-500/20';
+                                iconEl = <ShoppingBag size={13} />;
+                                sideDiffText = `-${log.quantity} pz`;
+                                sideDiffClass = 'text-indigo-600 dark:text-indigo-400 font-bold';
+                            } else if (log.type === 'cambio_precio') {
+                                actionLabel = 'Cambio de Precio de Venta';
+                                actionBadgeClass = 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/5 dark:text-cyan-400 border border-cyan-500/20';
+                                iconEl = <DollarSign size={13} />;
+                            } else if (log.type === 'cambio_costo') {
+                                actionLabel = 'Ajuste de Costo de Compra';
+                                actionBadgeClass = 'bg-pink-500/10 text-pink-600 dark:bg-pink-500/5 dark:text-pink-400 border border-pink-500/20';
+                                iconEl = <DollarSign size={13} />;
+                            }
+
+                            // Extract changes from before/after if we have them
+                            const hasPriceUnitChange = log.price_before !== null && log.price_after !== null && log.price_before !== log.price_after;
+                            const beforeFields = log.changed_fields;
+
+                            return (
+                                <div 
+                                    key={log.id}
+                                    className="flex flex-col sm:flex-row sm:items-start justify-between p-4 bg-white dark:bg-[#0c111e] rounded-2xl border border-slate-150 dark:border-slate-850/80 shadow-xs hover:border-slate-300 dark:hover:border-slate-800 transition-all duration-150 gap-3"
+                                >
+                                    <div className="flex items-start gap-3.5 flex-1">
+                                        <div className={`p-2 rounded-xl shrink-0 ${actionBadgeClass}`}>
+                                            {iconEl}
+                                        </div>
+
+                                        <div className="flex flex-col flex-1 min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="text-[10px] font-black text-slate-850 dark:text-slate-150 uppercase tracking-wide leading-none">
+                                                    {actionLabel}
+                                                </span>
+                                                {log.reference && (
+                                                    <span className="font-mono text-[8px] bg-slate-100 dark:bg-slate-850 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-400 font-bold">
+                                                        {log.reference}
                                                     </span>
-                                                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold mt-1">{log.notes || 'Venta registrada en sistema'}</p>
-                                                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-[8px] text-slate-400 font-semibold mt-1">
-                                                        <span className="flex items-center gap-0.5"><Clock size={8} /> {new Date(log.created_at).toLocaleString()}</span>
-                                                        <span className="hidden sm:inline">•</span>
-                                                        <span className="flex items-center gap-0.5 uppercase"><User size={8} /> {log.username || 'admin'}</span>
-                                                    </div>
-                                                </div>
+                                                )}
+                                                {log.type === 'salida_venta' && log.reference && (
+                                                    <button 
+                                                        onClick={() => handleOpenTicketTrace(log.reference)}
+                                                        className="py-0.5 px-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-[8px] font-black text-indigo-600 dark:text-indigo-400 rounded-md cursor-pointer flex items-center gap-1 uppercase transition-all"
+                                                        title="Haga clic para ver el ticket completo y los otros productos vendidos en el mismo"
+                                                    >
+                                                        Rastrear Ticket <Eye size={10} />
+                                                    </button>
+                                                )}
                                             </div>
 
-                                            <div className="flex flex-col items-end shrink-0">
-                                                <span className="text-[11px] font-black font-mono text-indigo-600 dark:text-indigo-400">
-                                                    {log.quantity} pz
+                                            <p className="text-[9.5px] text-slate-600 dark:text-slate-350 font-bold mt-1.5">
+                                                {log.notes || 'Movimiento de almacén registrado en sistema.'}
+                                            </p>
+
+                                            {/* Stock levels and differentials before vs after */}
+                                            {log.quantity_before !== null && log.quantity_after !== null && (
+                                                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[8.5px] font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-[#070c14]/40 p-2 rounded-xl border border-slate-100 dark:border-slate-850/40 w-fit">
+                                                    <span>Existencia Antes: <span className="font-mono font-black text-slate-800 dark:text-slate-200">{log.quantity_before} pz</span></span>
+                                                    <span className="text-slate-300 dark:text-slate-750">→</span>
+                                                    <span>Existencia Después: <span className="font-mono font-black text-slate-800 dark:text-slate-200">{log.quantity_after} pz</span></span>
+                                                    <span className="text-slate-350 dark:text-slate-750">•</span>
+                                                    <span className={`font-mono font-black ${log.quantity_after >= log.quantity_before ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                        Diferencia: {log.quantity_after - log.quantity_before > 0 ? '+' : ''}{log.quantity_after - log.quantity_before} pz
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {/* Granular Price and Cost changes (Very Detailed) */}
+                                            {(hasPriceUnitChange || beforeFields) && (
+                                                <div className="mt-2 flex flex-col gap-1 bg-cyan-50/20 dark:bg-cyan-950/10 border border-cyan-100/40 dark:border-cyan-950/40 p-2 rounded-xl text-[8.5px] font-bold w-fit text-slate-600 dark:text-slate-300">
+                                                    <span className="text-[7.5px] uppercase tracking-wider text-cyan-600 dark:text-cyan-400 font-black">Histórico de Alteración Monetaria:</span>
+                                                    
+                                                    {/* Unit Price Change */}
+                                                    {((beforeFields?.price_unit) || (log.price_before !== null && log.price_after !== null && log.type === 'cambio_precio')) && (
+                                                        <div className="flex flex-wrap items-center gap-1">
+                                                            <span>P. Unitario:</span>
+                                                            <span className="font-mono line-through text-slate-400">
+                                                                ${(beforeFields?.price_unit?.before ?? log.price_before ?? 0).toFixed(2)} USD
+                                                            </span>
+                                                            <span className="text-slate-300">→</span>
+                                                            <span className="font-mono text-cyan-600 dark:text-cyan-400 font-extrabold">
+                                                                ${(beforeFields?.price_unit?.after ?? log.price_after ?? 0).toFixed(2)} USD
+                                                            </span>
+                                                            {exchangeRate && (
+                                                                <span className="text-[8px] text-slate-400 font-medium">
+                                                                    (Bs. {((beforeFields?.price_unit?.before ?? log.price_before ?? 0) * exchangeRate).toFixed(2)} → Bs. {((beforeFields?.price_unit?.after ?? log.price_after ?? 0) * exchangeRate).toFixed(2)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Cost Price Change */}
+                                                    {beforeFields?.price_cost && (
+                                                        <div className="flex flex-wrap items-center gap-1">
+                                                            <span>Costo Compra:</span>
+                                                            <span className="font-mono line-through text-slate-400">
+                                                                ${beforeFields.price_cost.before.toFixed(2)} USD
+                                                            </span>
+                                                            <span className="text-slate-300">→</span>
+                                                            <span className="font-mono text-pink-600 dark:text-pink-400 font-extrabold">
+                                                                ${beforeFields.price_cost.after.toFixed(2)} USD
+                                                            </span>
+                                                            {exchangeRate && (
+                                                                <span className="text-[8px] text-slate-400 font-medium">
+                                                                    (Bs. {(beforeFields.price_cost.before * exchangeRate).toFixed(2)} → Bs. {(beforeFields.price_cost.after * exchangeRate).toFixed(2)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Bulk Price Change */}
+                                                    {beforeFields?.price_bulk && (
+                                                        <div className="flex flex-wrap items-center gap-1">
+                                                            <span>P. Mayoreo:</span>
+                                                            <span className="font-mono line-through text-slate-400">
+                                                                ${beforeFields.price_bulk.before.toFixed(2)} USD
+                                                            </span>
+                                                            <span className="text-slate-300">→</span>
+                                                            <span className="font-mono text-violet-600 dark:text-violet-400 font-extrabold">
+                                                                ${beforeFields.price_bulk.after.toFixed(2)} USD
+                                                            </span>
+                                                            {exchangeRate && (
+                                                                <span className="text-[8px] text-slate-400 font-medium">
+                                                                    (Bs. {(beforeFields.price_bulk.before * exchangeRate).toFixed(2)} → Bs. {(beforeFields.price_bulk.after * exchangeRate).toFixed(2)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="flex flex-wrap sm:items-center gap-x-2.5 gap-y-1 text-[8px] text-slate-400 font-bold mt-2 border-t border-slate-100 dark:border-slate-850/60 pt-2">
+                                                <span className="flex items-center gap-1">
+                                                    <Clock size={8.5} className="shrink-0" /> {new Date(log.created_at).toLocaleString()}
                                                 </span>
-                                                <span className="text-[8px] text-slate-450 dark:text-slate-500 font-mono font-black mt-0.5">
-                                                    Precio: ${(log.price || 0).toFixed(2)} USD
+                                                <span className="hidden sm:inline text-slate-300 dark:text-slate-750">•</span>
+                                                <span className="flex items-center gap-1 uppercase">
+                                                    <User size={8.5} className="shrink-0" /> {log.username || 'admin'}
                                                 </span>
                                             </div>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                                    </div>
+
+                                    {/* Sidebar Differential (Transactions column) */}
+                                    {sideDiffText && (
+                                        <div className="flex flex-col items-end shrink-0 pl-1">
+                                            <span className={`text-[11px] font-black font-mono ${sideDiffClass}`}>
+                                                {sideDiffText}
+                                            </span>
+                                            <span className="text-[8px] text-slate-400 dark:text-slate-500 font-mono font-bold mt-0.5">
+                                                Valuado: {log.price !== undefined ? `$${(log.price || 0).toFixed(2)}` : 'N/A'}
+                                            </span>
+                                            {exchangeRate && log.price !== undefined && (
+                                                <span className="text-[7.5px] text-slate-400 font-mono mt-0.5 font-semibold">
+                                                    (Bs. {((log.price || 0) * exchangeRate).toFixed(2)})
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>
         );
+    };
+
+    // Ticket Tracer / Detail Modal States
+    const [traceTicketId, setTraceTicketId] = useState<number | null>(null);
+    const [traceTicketDetails, setTraceTicketDetails] = useState<any | null>(null);
+    const [traceTicketItems, setTraceTicketItems] = useState<any[]>([]);
+    const [loadingTraceTicket, setLoadingTraceTicket] = useState(false);
+    const [showTraceTicketModal, setShowTraceTicketModal] = useState(false);
+
+    const handleOpenTicketTrace = async (reference: string) => {
+        const match = reference.match(/#\s*(\d+)/);
+        if (!match) return;
+        const saleId = parseInt(match[1]);
+        if (isNaN(saleId)) return;
+
+        setTraceTicketId(saleId);
+        setLoadingTraceTicket(true);
+        setShowTraceTicketModal(true);
+        try {
+            const saleRes = await fetch(`/api/sales/${saleId}`);
+            if (saleRes.ok) {
+                const saleData = await saleRes.json();
+                setTraceTicketDetails(saleData);
+            } else {
+                setTraceTicketDetails(null);
+            }
+
+            const itemsRes = await fetch(`/api/sales/${saleId}/items`);
+            if (itemsRes.ok) {
+                const itemsData = await itemsRes.json();
+                setTraceTicketItems(itemsData);
+            } else {
+                setTraceTicketItems([]);
+            }
+        } catch (err) {
+            console.error("Error fetching ticket trace details:", err);
+            showNotification("Fallo al conectar para recuperar los detalles del ticket.", "error");
+        } finally {
+            setLoadingTraceTicket(false);
+        }
     };
 
     // SKU Camera scanner states
@@ -2160,6 +2314,162 @@ export default function Inventory() {
                             )}
                         </div>
 
+                    </div>
+                </div>
+            )}
+
+            {/* TRACE TICKET DETAILS MODAL */}
+            {showTraceTicketModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-white dark:bg-[#0c111e] rounded-3xl border border-slate-200 dark:border-slate-850 w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-850 flex items-center justify-between bg-slate-50 dark:bg-[#070c14]/30">
+                            <div className="flex items-center gap-2">
+                                <ShoppingBag className="text-indigo-600 dark:text-indigo-400" size={18} />
+                                <span className="font-black text-xs uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                                    Trazabilidad: Detalle de Ticket #{traceTicketId}
+                                </span>
+                            </div>
+                            <button 
+                                onClick={() => setShowTraceTicketModal(false)}
+                                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-all"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-5">
+                            {loadingTraceTicket ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                                    <RefreshCw size={24} className="text-indigo-500 animate-spin" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cargando datos del ticket de venta...</span>
+                                </div>
+                            ) : !traceTicketDetails ? (
+                                <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
+                                    <AlertTriangle className="text-amber-500" size={32} />
+                                    <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-350">Error al cargar</span>
+                                    <p className="text-[11px] text-slate-400 max-w-sm">No se encontraron los datos generales o históricos para el ticket seleccionado.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Ticket General Metadata */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-[#070c14]/40 border border-slate-150 dark:border-slate-850/60 p-4 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-350">
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Fecha de Emisión</span>
+                                            <span className="text-slate-800 dark:text-slate-200">{new Date(traceTicketDetails.created_at).toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Atendido por</span>
+                                            <span className="text-slate-800 dark:text-slate-200 uppercase">@{traceTicketDetails.user_name || 'Cajero'}</span>
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Método de Pago</span>
+                                            <span className="text-indigo-600 dark:text-indigo-400 uppercase">{traceTicketDetails.payment_method}</span>
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="text-[8.5px] uppercase text-slate-400 tracking-wider font-semibold">Cliente de Registro</span>
+                                            <span className="text-slate-800 dark:text-slate-200 truncate">{traceTicketDetails.client_name || 'Al Público'}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Products Table */}
+                                    <div className="flex flex-col gap-2.5">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                            <span>Detalle de Artículos Vendidos en la misma Transacción</span>
+                                            <span className="bg-slate-100 dark:bg-slate-850 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-mono text-[9px]">{traceTicketItems.length} items</span>
+                                        </span>
+
+                                        <div className="border border-slate-200/80 dark:border-slate-850/80 rounded-2xl overflow-hidden bg-white dark:bg-[#0c111e]">
+                                            <table className="w-full text-left text-xs border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-50 dark:bg-[#070c14]/30 border-b border-slate-150 dark:border-slate-850/80 text-[8.5px] font-black uppercase text-slate-400 tracking-wider font-mono">
+                                                        <th className="p-3">Artículo</th>
+                                                        <th className="p-3 text-center">Cant</th>
+                                                        <th className="p-3 text-right">Precio Pz</th>
+                                                        <th className="p-3 text-right">Total</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {traceTicketItems.map((item) => {
+                                                        const isCurrentProduct = Number(item.product_id) === Number(expandedProductId);
+                                                        return (
+                                                            <tr 
+                                                                key={item.id} 
+                                                                className={`border-b border-slate-100 dark:border-slate-850/40 last:border-0 ${
+                                                                    isCurrentProduct 
+                                                                        ? 'bg-indigo-50/30 dark:bg-indigo-950/20 font-extrabold text-indigo-950 dark:text-indigo-100 border-l-4 border-l-indigo-500' 
+                                                                        : 'text-slate-600 dark:text-slate-300'
+                                                                }`}
+                                                            >
+                                                                <td className="p-3">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-semibold text-xs">{item.product_name || 'Producto'}</span>
+                                                                        <span className="text-[8.5px] font-mono text-slate-400 mt-0.5">SKU: {item.sku || 'N/A'}</span>
+                                                                        {isCurrentProduct && (
+                                                                            <span className="inline-flex mt-1 text-[8px] bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-md font-black uppercase w-max tracking-wide">
+                                                                                Artículo en Consulta
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="p-3 text-center font-mono">{item.quantity} pz</td>
+                                                                <td className="p-3 text-right font-mono">
+                                                                    {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{item.price?.toFixed(2)}
+                                                                </td>
+                                                                <td className="p-3 text-right font-mono text-slate-800 dark:text-slate-200">
+                                                                    {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{(item.quantity * item.price)?.toFixed(2)}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    {/* Financial Summary */}
+                                    <div className="flex flex-col gap-2.5 bg-slate-50 dark:bg-[#070c14]/20 border border-slate-150 dark:border-slate-850/60 p-5 rounded-2xl text-xs font-bold mt-2">
+                                        <div className="flex items-center justify-between text-slate-500">
+                                            <span>Subtotal Bruto:</span>
+                                            <span className="font-mono text-slate-700 dark:text-slate-300">
+                                                {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{(traceTicketDetails.total + traceTicketDetails.discount).toFixed(2)}
+                                            </span>
+                                        </div>
+                                        {traceTicketDetails.discount > 0 && (
+                                            <div className="flex items-center justify-between text-emerald-500">
+                                                <span>Descuento Aplicado:</span>
+                                                <span className="font-mono">
+                                                    -{traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{traceTicketDetails.discount.toFixed(2)}
+                                                </span>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center justify-between text-base font-black border-t border-slate-200 dark:border-slate-800 pt-2.5 text-slate-800 dark:text-white">
+                                            <span>Total Transado:</span>
+                                            <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                                                {traceTicketDetails.currency === 'USD' ? '$' : 'Bs.'}{traceTicketDetails.total.toFixed(2)} {traceTicketDetails.currency}
+                                            </span>
+                                        </div>
+                                        {traceTicketDetails.currency === 'BOB' && exchangeRate && (
+                                            <div className="text-[10px] text-slate-400 flex items-center justify-between font-medium border-t border-slate-150 dark:border-slate-850 pt-2">
+                                                <span>Conversión Referencial (Tipo de Cambio: {exchangeRate}):</span>
+                                                <span className="font-mono font-bold">${(traceTicketDetails.total / exchangeRate).toFixed(2)} USD</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-850 flex justify-end bg-slate-50 dark:bg-[#070c14]/20">
+                            <button 
+                                onClick={() => setShowTraceTicketModal(false)}
+                                className="py-2 px-5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl cursor-pointer shadow-md transition-all uppercase tracking-wider"
+                            >
+                                Entendido
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

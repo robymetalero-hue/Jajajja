@@ -1878,12 +1878,90 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.get("/api/products/:id/audit-history", (req, res) => {
     const { id } = req.params;
     try {
-      const logs = db.prepare(`
-        SELECT * FROM system_audit_logs
-        WHERE related_product_id = ? OR (entity_type = 'producto' AND entity_id = ?)
+      // Get all inventory movements
+      const invLogs = db.prepare(`
+        SELECT * FROM inventory_audit_logs
+        WHERE product_id = ?
         ORDER BY created_at DESC
-      `).all(id, id);
-      res.json(logs);
+      `).all(id) as any[];
+
+      // Get system audit logs for this product to match quantities before/after and fetch price history
+      const sysLogs = db.prepare(`
+        SELECT event_type, quantity_before, quantity_changed, quantity_after, price_before, price_after, related_ticket, created_at, user_name, reason, changed_fields
+        FROM system_audit_logs
+        WHERE related_product_id = ? OR (entity_type = 'producto' AND entity_id = ?)
+      `).all(id, id) as any[];
+
+      // Map inventory audit logs to unified format
+      const unifiedLogs = invLogs.map(log => {
+        // Find a matching system audit log to extract details if available
+        const match = sysLogs.find(sys => 
+          sys.related_ticket === log.reference && 
+          Math.abs(sys.quantity_changed || 0) === Math.abs(log.quantity || 0)
+        );
+
+        let parsedFields = null;
+        if (match && match.changed_fields) {
+          try {
+            parsedFields = typeof match.changed_fields === 'string' ? JSON.parse(match.changed_fields) : match.changed_fields;
+          } catch (e) {}
+        }
+
+        return {
+          id: log.id,
+          type: log.type, // 'ingreso_compra', 'salida_venta', etc.
+          quantity: log.quantity,
+          price: log.price,
+          created_at: log.created_at,
+          reference: log.reference,
+          username: match?.user_name || log.username || 'admin',
+          notes: match?.reason || log.notes || 'Movimiento de inventario',
+          quantity_before: match ? match.quantity_before : null,
+          quantity_after: match ? match.quantity_after : null,
+          price_before: match ? match.price_before : null,
+          price_after: match ? match.price_after : null,
+          changed_fields: parsedFields
+        };
+      });
+
+      // Also grab any system_audit_logs that might not have a corresponding inventory_audit_log
+      const missingSysLogs = sysLogs.filter(sys => {
+        const alreadyMapped = unifiedLogs.some(ul => 
+          ul.reference === sys.related_ticket && 
+          Math.abs(ul.quantity || 0) === Math.abs(sys.quantity_changed || 0)
+        );
+        return !alreadyMapped && sys.event_type !== 'SYSTEM_EVENT';
+      });
+
+      for (const sys of missingSysLogs) {
+        let parsedFields = null;
+        try {
+          if (sys.changed_fields) {
+            parsedFields = typeof sys.changed_fields === 'string' ? JSON.parse(sys.changed_fields) : sys.changed_fields;
+          }
+        } catch (e) {}
+
+        unifiedLogs.push({
+          id: `sys-${sys.created_at}-${Math.random()}`,
+          type: sys.event_type,
+          quantity: Math.abs(sys.quantity_changed || 0),
+          price: sys.price_after || sys.price_before || 0,
+          created_at: sys.created_at,
+          reference: sys.related_ticket || 'Ajuste de Sistema',
+          username: sys.user_name || 'sistema',
+          notes: sys.reason || 'Log registrado por sistema',
+          quantity_before: sys.quantity_before,
+          quantity_after: sys.quantity_after,
+          price_before: sys.price_before,
+          price_after: sys.price_after,
+          changed_fields: parsedFields
+        });
+      }
+
+      // Sort by created_at descending
+      unifiedLogs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      res.json(unifiedLogs);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -2500,6 +2578,28 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       
       const sales = db.prepare(query).all(...params);
       res.json(sales);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/sales/:id", (req, res) => {
+    const { id } = req.params;
+    try {
+      const sale = db.prepare(`
+        SELECT s.*, 
+               COALESCE(c.name, 'Público General') as client_name,
+               COALESCE(u.username, 'Cajero') as user_name
+        FROM sales s
+        LEFT JOIN clients c ON s.client_id = c.id
+        LEFT JOIN users u ON s.user_id = u.id
+        WHERE s.id = ?
+      `).get(id);
+      
+      if (!sale) {
+        return res.status(404).json({ error: "Venta no encontrada." });
+      }
+      res.json(sale);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
