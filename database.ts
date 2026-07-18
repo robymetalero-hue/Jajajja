@@ -237,19 +237,41 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_pending_sale_items_prod_id ON pending_sale_items (product_id);
 `);
 
-// Seed default departments if table is empty
+// Seed default departments if they haven't been seeded yet
 try {
-  const count = db.prepare('SELECT COUNT(*) as count FROM departments').get() as any;
-  if (!count || count.count === 0) {
-    const defaults = ['Storage', 'Micro SDs', 'USBs', 'Electronics'];
-    const stmt = db.prepare('INSERT OR IGNORE INTO departments (name) VALUES (?)');
-    for (const name of defaults) {
-      stmt.run(name);
+  const seededRow = db.prepare("SELECT value FROM settings WHERE key = 'departments_seeded'").get() as any;
+  if (!seededRow) {
+    const count = db.prepare('SELECT COUNT(*) as count FROM departments').get() as any;
+    if (!count || count.count === 0) {
+      const defaults = ['Storage', 'Micro SDs', 'USBs', 'Electronics'];
+      const stmt = db.prepare('INSERT OR IGNORE INTO departments (name) VALUES (?)');
+      for (const name of defaults) {
+        stmt.run(name);
+      }
+      console.log("[Database] Successfully seeded default departments:", defaults);
     }
-    console.log("[Database] Successfully seeded default departments:", defaults);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('departments_seeded', 'true')").run();
   }
 } catch (e: any) {
   console.error("Failed to seed default departments:", e.message);
+}
+
+// Clean up ghost default departments if no products are using them (one-time migration)
+try {
+  const cleanedRow = db.prepare("SELECT value FROM settings WHERE key = 'migration_clean_ghost_departments'").get() as any;
+  if (!cleanedRow) {
+    const defaultsToDelete = ['Storage', 'Micro SDs', 'USBs', 'Electronics', 'Micro SD'];
+    for (const name of defaultsToDelete) {
+      const productUsing = db.prepare("SELECT COUNT(*) as count FROM products WHERE category = ?").get(name) as any;
+      if (!productUsing || productUsing.count === 0) {
+        db.prepare("DELETE FROM departments WHERE name = ?").run(name);
+        console.log(`[Database Migration] Cleaned up unused default department: ${name}`);
+      }
+    }
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_clean_ghost_departments', 'true')").run();
+  }
+} catch (e: any) {
+  console.error("Failed to run clean ghost departments migration:", e.message);
 }
 
 // Gracefully migrate existing databases

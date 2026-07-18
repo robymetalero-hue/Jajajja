@@ -289,10 +289,10 @@ export default function Inventory() {
                                                 {log.type === 'salida_venta' && log.reference && (
                                                     <button 
                                                         onClick={() => handleOpenTicketTrace(log.reference)}
-                                                        className="py-0.5 px-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-[8px] font-black text-indigo-600 dark:text-indigo-400 rounded-md cursor-pointer flex items-center gap-1 uppercase transition-all"
+                                                        className="py-0.5 px-2 bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-[8.5px] font-black text-white rounded-lg cursor-pointer flex items-center gap-1 uppercase transition-all shadow-xs border border-emerald-600/10"
                                                         title="Haga clic para ver el ticket completo y los otros productos vendidos en el mismo"
                                                     >
-                                                        Rastrear Ticket <Eye size={10} />
+                                                        Rastrear Ticket <Eye size={11} />
                                                     </button>
                                                 )}
                                             </div>

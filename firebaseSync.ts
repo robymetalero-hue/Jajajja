@@ -324,6 +324,34 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
         allowedColumns = new Set();
       }
 
+      if (table === 'departments') {
+        try {
+          const cleanedRow = db.prepare("SELECT value FROM settings WHERE key = 'migration_clean_ghost_departments_fs'").get() as any;
+          if (!cleanedRow) {
+            const defaultsToDelete = ['Storage', 'Micro SDs', 'USBs', 'Electronics', 'Micro SD'];
+            const deleteBatch = writeBatch(firestore);
+            let delCount = 0;
+            for (const docSnap of snapshot.docs) {
+              const data = docSnap.data();
+              if (data && data.name && defaultsToDelete.includes(data.name)) {
+                const prodCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE category = ?").get(data.name) as any;
+                if (!prodCount || prodCount.count === 0) {
+                  deleteBatch.delete(docSnap.ref);
+                  delCount++;
+                }
+              }
+            }
+            if (delCount > 0) {
+              await deleteBatch.commit();
+              console.log(`[Sync Migration] Deleted ${delCount} unused default departments from Firestore.`);
+            }
+            db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_clean_ghost_departments_fs', 'true')").run();
+          }
+        } catch (migErr: any) {
+          console.warn("[Sync Migration Error] Failed to run ghost departments Firestore cleanup migration:", migErr.message);
+        }
+      }
+
       const syncTx = db.transaction(() => {
         if (forceOverwrite) {
           db.prepare(`DELETE FROM ${table}`).run();
@@ -331,6 +359,15 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
         
         for (const docSnap of snapshot.docs) {
           const data = docSnap.data();
+          
+          // Skip default departments if they are ghost defaults being deleted
+          if (table === 'departments' && data && data.name && ['Storage', 'Micro SDs', 'USBs', 'Electronics', 'Micro SD'].includes(data.name)) {
+            const prodCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE category = ?").get(data.name) as any;
+            if (!prodCount || prodCount.count === 0) {
+              continue; // Skip inserting this deleted department
+            }
+          }
+
           let keys = Object.keys(data);
           if (keys.length === 0) continue;
 
