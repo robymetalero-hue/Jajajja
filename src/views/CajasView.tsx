@@ -383,7 +383,7 @@ export default function CajasView() {
                     <span>Ventas vigentes sin liquidar:</span>
                     <span className="font-mono font-black text-white">{movements.filter(m => m.type === 'venta' && m.status === 'pendiente').length} tickets</span>
                   </div>
-                  {hasPermission(user, 'reset_own_cash') ? (
+                  {isAdminOrPropietario ? (
                     <button
                       onClick={handleOpenSettle}
                       className="w-full mt-2 py-2.5 bg-white text-indigo-700 hover:bg-indigo-50 font-black text-[10px] uppercase rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md"

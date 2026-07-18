@@ -2592,6 +2592,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         const sumResult = db.prepare('SELECT SUM(quantity * price) as sumTotal FROM sale_items WHERE sale_id = ?').get(sale_id) as any;
         const newTotal = sumResult?.sumTotal || 0;
         
+        let refMovId: any = null;
+        let refAccId: any = null;
+        
         if (originalSale) {
           const refundAmount = originalSale.total - newTotal; // amount being returned
           if (refundAmount > 0) {
@@ -2606,7 +2609,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             `).run(sId, sName);
 
             // Record refund movement
-            db.prepare(`
+            const movResult = db.prepare(`
               INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes)
               VALUES (?, ?, 'devolucion', ?, ?, ?, 'pendiente', ?)
             `).run(
@@ -2617,6 +2620,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               originalSale.payment_method || 'Efectivo',
               `Reembolso por devolución de venta #${sale_id}`
             );
+            refMovId = movResult.lastInsertRowid;
 
             // Update cash balance
             db.prepare(`
@@ -2624,6 +2628,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               SET current_balance = MAX(0, current_balance - ?), updated_at = CURRENT_TIMESTAMP
               WHERE seller_id = ?
             `).run(refundAmount, sId);
+
+            const accRow = db.prepare('SELECT id FROM cash_accounts WHERE seller_id = ?').get(sId) as any;
+            refAccId = accRow?.id;
           }
         }
 
@@ -2633,10 +2640,10 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         } else {
           db.prepare('UPDATE sales SET total = ? WHERE id = ?').run(newTotal, sale_id);
         }
-        return true;
+        return { refAccId, refMovId };
       });
 
-      refundTrx();
+      const { refAccId, refMovId } = refundTrx();
 
       // Write advanced audit logs for each refunded product item
       const auditUser = (req as any).auditUser || {};
@@ -2675,7 +2682,11 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         console.warn("[Audit Error] Failed to write general refund audit:", genAuditErr.message);
       }
 
-      syncAfterWrite(["sales", "sale_items", "products"]);
+      syncAfterWrite({
+        sales: [sale_id],
+        cash_accounts: refAccId ? [refAccId] : [],
+        cash_movements: refMovId ? [refMovId] : []
+      });
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2803,7 +2814,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         const receivedAmountInBs = safeCurrency === 'USD' ? (receivedAmount * currentRate) : receivedAmount;
 
         // Record cash movement (pending settlement)
-        db.prepare(`
+        const movResult = db.prepare(`
           INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes)
           VALUES (?, ?, 'venta', ?, ?, ?, 'pendiente', ?)
         `).run(
@@ -2814,6 +2825,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           payment_method || 'Efectivo',
           `Venta registrada #${saleId}`
         );
+        const movId = movResult.lastInsertRowid;
 
         // Update seller's cash account balance (always in BOB/Bs)
         db.prepare(`
@@ -2821,6 +2833,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           SET current_balance = current_balance + ?, updated_at = CURRENT_TIMESTAMP
           WHERE seller_id = ?
         `).run(receivedAmountInBs, activeUserId);
+
+        const accRow = db.prepare('SELECT id FROM cash_accounts WHERE seller_id = ?').get(activeUserId) as any;
+        const accId = accRow?.id;
 
         let arId: any = null;
         let cpId: any = null;
@@ -2861,10 +2876,10 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             cpId = cpResult.lastInsertRowid;
           }
         }
-        return { saleId, itemIds, productIds, arId, cpId };
+        return { saleId, itemIds, productIds, arId, cpId, accId, movId };
       });
 
-      const { saleId, itemIds, productIds, arId, cpId } = transaction();
+      const { saleId, itemIds, productIds, arId, cpId, accId, movId } = transaction();
 
       // Write advanced audit logs for each sold product item
       const auditUser = (req as any).auditUser || {};
@@ -2925,7 +2940,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const syncMap: Record<string, any[]> = {
         sales: [saleId],
         sale_items: itemIds,
-        products: productIds
+        products: productIds,
+        cash_accounts: accId ? [accId] : [],
+        cash_movements: movId ? [movId] : []
       };
       if (client_id) {
         syncMap.clients = [client_id];
@@ -3018,7 +3035,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const newRemainingAmount = Math.max(0, remaining - actualPayment);
       const newStatus = newRemainingAmount <= 0 ? 'pagado' : 'pendiente';
 
-      const { paymentId, activeUserId } = db.transaction(() => {
+      const { paymentId, activeUserId, accId, movId } = db.transaction(() => {
         const result = db.prepare(`
           INSERT INTO credit_payments (account_receivable_id, amount, payment_method, user_id, notes)
           VALUES (?, ?, ?, ?, ?)
@@ -3041,7 +3058,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         `).run(currentActiveUserId, sName);
 
         // Record the cash movement (pending settlement)
-        db.prepare(`
+        const movResult = db.prepare(`
           INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes)
           VALUES (?, ?, 'ingreso_manual', ?, 'BOB', ?, 'pendiente', ?)
         `).run(
@@ -3059,14 +3076,21 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           WHERE seller_id = ?
         `).run(actualPayment, currentActiveUserId);
 
-        return { paymentId: result.lastInsertRowid, activeUserId: currentActiveUserId };
+        const accRow = db.prepare('SELECT id FROM cash_accounts WHERE seller_id = ?').get(currentActiveUserId) as any;
+
+        return { 
+          paymentId: result.lastInsertRowid, 
+          activeUserId: currentActiveUserId, 
+          accId: accRow?.id, 
+          movId: movResult.lastInsertRowid 
+        };
       })();
 
       syncAfterWrite({
         accounts_receivable: [id],
         credit_payments: [paymentId],
-        cash_accounts: [activeUserId],
-        cash_movements: []
+        cash_accounts: accId ? [accId] : [],
+        cash_movements: movId ? [movId] : []
       });
       res.json({ success: true, actualPayment, newRemainingAmount, newStatus });
     } catch (e: any) {
@@ -4513,11 +4537,129 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   // --- NUEVOS ENDPOINTS: CAJA ACUMULATIVA INDIVIDUAL (PARTE 4) ---
 
+  // Self-healing helper to ensure cash accounts and cash movements are 100% consistent with sales
+  function selfHealCashAccounts(targetSellerId?: number) {
+    try {
+      // Get current exchange rate
+      const rateRow = db.prepare("SELECT value FROM settings WHERE key = 'exchange_rate'").get() as any;
+      const currentRate = rateRow ? parseFloat(rateRow.value) : 6.96;
+
+      // 1. Find all sales where closure/cierre is NULL and there is NO cash movement for that sale
+      // Note: credit sales ('Crédito') only generate cash movements if they have an initial abono > 0
+      const missingMovementsQuery = targetSellerId 
+        ? db.prepare(`
+            SELECT s.*, u.username as seller_username
+            FROM sales s
+            JOIN users u ON s.user_id = u.id
+            LEFT JOIN cash_movements m ON s.id = m.sale_id
+            WHERE s.cierre_id IS NULL AND m.id IS NULL AND s.user_id = ?
+          `)
+        : db.prepare(`
+            SELECT s.*, u.username as seller_username
+            FROM sales s
+            JOIN users u ON s.user_id = u.id
+            LEFT JOIN cash_movements m ON s.id = m.sale_id
+            WHERE s.cierre_id IS NULL AND m.id IS NULL
+          `);
+
+      const missingSales = missingMovementsQuery.all(targetSellerId ? [targetSellerId] : []) as any[];
+
+      const newlyCreatedMovementIds: number[] = [];
+      const affectedSellerIds = new Set<number>();
+
+      if (missingSales.length > 0) {
+        console.log(`[Self-Heal] Found ${missingSales.length} sales missing their cash movements. Repairing...`);
+        
+        db.transaction(() => {
+          for (const sale of missingSales) {
+            const isCredit = sale.payment_method === 'Crédito';
+            // Cash movement amount: for credit sales, it is the initial abono; for others, it is the total sale amount
+            const receivedAmount = isCredit ? Math.min(sale.total, Math.max(0, Number(sale.initial_abono || 0))) : sale.total;
+            
+            // If it's a credit sale with 0 initial abono, no cash movement is needed
+            if (isCredit && receivedAmount === 0) {
+              continue;
+            }
+
+            // Insert the missing cash movement in SQLite using the sale's timestamp
+            const result = db.prepare(`
+              INSERT INTO cash_movements (seller_id, sale_id, type, amount, currency, payment_method, status, notes, created_at)
+              VALUES (?, ?, 'venta', ?, ?, ?, 'pendiente', ?, ?)
+            `).run(
+              sale.user_id,
+              sale.id,
+              receivedAmount,
+              sale.currency || 'BOB',
+              sale.payment_method || 'Efectivo',
+              `Sincronización de venta #${sale.id} (Autoreparado)`,
+              sale.created_at ? sale.created_at.replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19)
+            );
+
+            newlyCreatedMovementIds.push(result.lastInsertRowid as number);
+            affectedSellerIds.add(sale.user_id);
+          }
+        })();
+      }
+
+      // 2. Recalculate and heal current_balance for cash accounts of affected (or all) sellers
+      const sellersToHeal = targetSellerId 
+        ? [targetSellerId] 
+        : (db.prepare("SELECT DISTINCT id FROM users WHERE role = 'vendedor' OR role = 'admin' OR role = 'propietario' OR role = 'administrador'").all() as any[]).map(u => u.id);
+
+      const updatedAccountIds: number[] = [];
+
+      for (const sellerId of sellersToHeal) {
+        // Ensure account exists
+        const sellerRow = db.prepare('SELECT username FROM users WHERE id = ?').get(sellerId) as any;
+        if (!sellerRow) continue;
+        const sName = sellerRow.username;
+
+        db.prepare(`
+          INSERT OR IGNORE INTO cash_accounts (seller_id, seller_username, current_balance)
+          VALUES (?, ?, 0.0)
+        `).run(sellerId, sName);
+
+        const account = db.prepare('SELECT * FROM cash_accounts WHERE seller_id = ?').get(sellerId) as any;
+        
+        // Sum all pending movements
+        const pendingMovements = db.prepare("SELECT * FROM cash_movements WHERE seller_id = ? AND status = 'pendiente'").all(sellerId) as any[];
+        let calculatedBalance = 0;
+        for (const m of pendingMovements) {
+          const amtInBs = m.currency === 'USD' ? (m.amount * currentRate) : m.amount;
+          calculatedBalance += amtInBs;
+        }
+
+        if (Math.abs(account.current_balance - calculatedBalance) > 0.01) {
+          console.log(`[Self-Heal] Updating current_balance of cash account for seller ${sName} (${sellerId}) from ${account.current_balance} to ${calculatedBalance}`);
+          db.prepare('UPDATE cash_accounts SET current_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE seller_id = ?').run(calculatedBalance, sellerId);
+          updatedAccountIds.push(account.id);
+        }
+      }
+
+      // 3. Push all healed entities to Firestore to synchronize the ledger
+      if (newlyCreatedMovementIds.length > 0 || updatedAccountIds.length > 0) {
+        syncAfterWrite({
+          cash_movements: newlyCreatedMovementIds,
+          cash_accounts: updatedAccountIds
+        });
+      }
+    } catch (err: any) {
+      console.warn("[Self-Heal Exception] Failed to run self-healing on cash accounts:", err.message);
+    }
+  }
+
   // Obtener estado de cajas de vendedores
   app.get("/api/cash-accounts", (req, res) => {
     try {
       const userRole = req.headers['x-user-role'] || req.query.user_role;
       const userId = Number(req.headers['x-user-id'] || req.query.user_id);
+
+      // Trigger self-healing first!
+      if (userRole === 'vendedor') {
+        selfHealCashAccounts(userId);
+      } else {
+        selfHealCashAccounts(); // heals everyone
+      }
 
       if (userRole === 'vendedor') {
         // A seller can only see their own cash account!
@@ -4556,6 +4698,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       if (userRole === 'vendedor' && String(userId) !== String(sellerId)) {
         return res.status(403).json({ error: "No tienes autorización para ver los movimientos de caja de otros vendedores." });
       }
+
+      // Trigger self-healing first for this seller to ensure correct movements are loaded!
+      selfHealCashAccounts(sellerId);
 
       const movements = db.prepare(`
         SELECT m.*, s.total as sale_total, s.discount as sale_discount, s.payment_method as sale_payment
