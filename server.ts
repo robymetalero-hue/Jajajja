@@ -1641,7 +1641,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
     }
 
     try {
-      const selectStmt = db.prepare('SELECT id, stock FROM products WHERE sku = ?');
+      const selectStmt = db.prepare('SELECT id, name, sku, stock, price_cost, price_unit FROM products WHERE sku = ?');
       const insertStmt = db.prepare(`
         INSERT INTO products (name, category, sku, stock, price_unit, price_bulk, price_cost, stock_alarm, image)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
@@ -1655,6 +1655,15 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       let inserted = 0;
       let updated = 0;
       let skipped = 0;
+
+      const productIdsToSync: any[] = [];
+      const inventoryAuditLogIds: any[] = [];
+      const systemAuditLogIds: any[] = [];
+
+      const auditUser = (req as any).auditUser || {};
+      const normUserId = auditUser.userId || 1;
+      const normUsername = auditUser.userName || 'admin';
+      const normUserRole = auditUser.userRole || 'admin';
 
       const transaction = db.transaction(() => {
         for (const p of products) {
@@ -1681,20 +1690,150 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             } else if (behavior === 'overwrite') {
               overwriteStmt.run(name, category, stock, price_unit, price_bulk, price_cost, stock_alarm, existing.id);
               updated++;
+              productIdsToSync.push(existing.id);
+
+              const diff = stock - existing.stock;
+              if (diff !== 0) {
+                const logType = diff > 0 ? 'ajuste_incremento' : 'ajuste_decremento';
+                const absQty = Math.abs(diff);
+                const invRes = db.prepare(`
+                  INSERT INTO inventory_audit_logs 
+                  (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Importación Masiva', 'Ajuste de stock por sobreescritura de importación masiva', ?)
+                `).run(existing.id, name, sku, logType, absQty, price_cost, normUserId, normUsername, getBoliviaISOString());
+                inventoryAuditLogIds.push(invRes.lastInsertRowid);
+
+                // System Audit
+                try {
+                  const sysLogId = insertSystemAuditLog({
+                    eventType: logType,
+                    category: 'inventario',
+                    module: 'inventario',
+                    action: 'Ajuste por Importación Overwrite',
+                    severity: 'info',
+                    entityType: 'producto',
+                    entityId: existing.id,
+                    entityName: name,
+                    userId: normUserId,
+                    userName: normUsername,
+                    userRole: normUserRole,
+                    quantityBefore: existing.stock,
+                    quantityChanged: diff,
+                    quantityAfter: stock,
+                    priceBefore: existing.price_unit,
+                    priceAfter: price_unit,
+                    reason: 'Ajuste de stock por sobreescritura de importación masiva',
+                    relatedProductId: existing.id,
+                    status: 'success'
+                  });
+                  if (sysLogId) systemAuditLogIds.push(sysLogId);
+                } catch (auditErr: any) {
+                  console.warn("[Audit Error] Failed to log overwrite audit:", auditErr.message);
+                }
+              }
             } else {
               // Default to 'update_stock': add new stock to existing
               updateStockStmt.run(stock, existing.id);
               updated++;
+              productIdsToSync.push(existing.id);
+
+              if (stock > 0) {
+                const invRes = db.prepare(`
+                  INSERT INTO inventory_audit_logs 
+                  (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+                  VALUES (?, ?, ?, 'ajuste_incremento', ?, ?, ?, ?, 'Importación Masiva', 'Incremento de stock por importación masiva', ?)
+                `).run(existing.id, existing.name, sku, stock, price_cost, normUserId, normUsername, getBoliviaISOString());
+                inventoryAuditLogIds.push(invRes.lastInsertRowid);
+
+                // System Audit
+                try {
+                  const sysLogId = insertSystemAuditLog({
+                    eventType: 'ajuste_incremento',
+                    category: 'inventario',
+                    module: 'inventario',
+                    action: 'Ajuste por Importación Adición',
+                    severity: 'info',
+                    entityType: 'producto',
+                    entityId: existing.id,
+                    entityName: existing.name,
+                    userId: normUserId,
+                    userName: normUsername,
+                    userRole: normUserRole,
+                    quantityBefore: existing.stock,
+                    quantityChanged: stock,
+                    quantityAfter: existing.stock + stock,
+                    priceBefore: existing.price_unit,
+                    priceAfter: existing.price_unit,
+                    reason: 'Incremento de stock por importación masiva',
+                    relatedProductId: existing.id,
+                    status: 'success'
+                  });
+                  if (sysLogId) systemAuditLogIds.push(sysLogId);
+                } catch (auditErr: any) {
+                  console.warn("[Audit Error] Failed to log addition audit:", auditErr.message);
+                }
+              }
             }
           } else {
-            insertStmt.run(name, category, sku, stock, price_unit, price_bulk, price_cost, stock_alarm);
+            const result = insertStmt.run(name, category, sku, stock, price_unit, price_bulk, price_cost, stock_alarm);
             inserted++;
+            const newProdId = result.lastInsertRowid;
+            productIdsToSync.push(newProdId);
+
+            if (stock > 0) {
+              const invRes = db.prepare(`
+                INSERT INTO inventory_audit_logs 
+                (product_id, product_name, product_sku, type, quantity, price, user_id, username, reference, notes, created_at)
+                VALUES (?, ?, ?, 'ingreso_compra', ?, ?, ?, ?, 'Stock Inicial', 'Registro inicial por importación masiva', ?)
+              `).run(newProdId, name, sku, stock, price_cost, normUserId, normUsername, getBoliviaISOString());
+              inventoryAuditLogIds.push(invRes.lastInsertRowid);
+            }
+
+            // System Audit
+            try {
+              const sysLogId = insertSystemAuditLog({
+                eventType: 'creacion_producto',
+                category: 'productos',
+                module: 'inventario',
+                action: 'Creación por Importación Masiva',
+                severity: 'info',
+                entityType: 'producto',
+                entityId: newProdId,
+                entityName: name,
+                userId: normUserId,
+                userName: normUsername,
+                userRole: normUserRole,
+                quantityBefore: 0,
+                quantityChanged: stock,
+                quantityAfter: stock,
+                priceBefore: 0,
+                priceAfter: price_unit,
+                reason: 'Creación de nuevo producto por importación masiva',
+                relatedProductId: newProdId,
+                status: 'success'
+              });
+              if (sysLogId) systemAuditLogIds.push(sysLogId);
+            } catch (auditErr: any) {
+              console.warn("[Audit Error] Failed to log creation audit:", auditErr.message);
+            }
           }
         }
       });
 
       transaction();
-      syncAfterWrite("products", "bulk-import");
+
+      // Build specific sync map and trigger syncAfterWrite
+      const syncMap: Record<string, any[]> = {
+        products: productIdsToSync
+      };
+      if (inventoryAuditLogIds.length > 0) {
+        syncMap.inventory_audit_logs = inventoryAuditLogIds;
+      }
+      if (systemAuditLogIds.length > 0) {
+        syncMap.system_audit_logs = systemAuditLogIds;
+      }
+
+      syncAfterWrite(syncMap);
       res.json({ success: true, inserted, updated, skipped });
     } catch (e: any) {
       console.error("Bulk import error:", e);
@@ -6496,6 +6635,19 @@ Responde de forma sumamente atenta, con alta proactividad, y de manera ultra bre
     console.log("[Sync] Restoring SQLite database state from Cloud Firestore...");
     await pullFirestoreToLocal();
     console.log("[Sync] Startup database restoration completed successfully.");
+
+    // Dynamic self-healing backfill for inventory logs
+    console.log("[Sync-Heal] Starting dynamic self-healing database backfill...");
+    const { backfillMissingLogs } = await import("./database.ts");
+    backfillMissingLogs();
+
+    // Push the healed logs back to Firestore
+    console.log("[Sync-Heal] Replicating healed database state to Google Cloud Firestore...");
+    pushAllLocalToFirestore().then(() => {
+      console.log("[Sync-Heal] Healed database state successfully synced to Google Cloud Firestore.");
+    }).catch((syncErr: any) => {
+      console.warn("[Sync-Heal] Failed to upload healed database to cloud:", syncErr.message);
+    });
   } catch (err: any) {
     console.warn("[Sync] Startup pull bypassed or failed:", err.message);
   }
