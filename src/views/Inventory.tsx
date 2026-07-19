@@ -10,7 +10,7 @@ import { useElasticScroll } from '../utils/touchScroll';
 import PhysicalCountManager from '../components/PhysicalCountManager';
 
 export default function Inventory() {
-    const { products, fetchProducts, user, exchangeRate, roundBs, departments, fetchDepartments } = useAppContext();
+    const { products, fetchProducts, user, exchangeRate, roundBs, departments, fetchDepartments, view } = useAppContext();
     const elasticScroll = useElasticScroll(true);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -1136,59 +1136,76 @@ export default function Inventory() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-[#0c111e] p-5 rounded-3xl border border-slate-200/60 dark:border-slate-850/40 gap-4">
                 <div>
                     <div className="flex items-center gap-2">
-                        <Tag className="text-blue-500 shrink-0" size={16} />
-                        <h1 className="text-base font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Control de Almacén e Inventario</h1>
+                        {view === 'productos' ? (
+                            <Tag className="text-blue-500 shrink-0" size={16} />
+                        ) : (
+                            <ClipboardCheck className="text-indigo-500 shrink-0" size={16} />
+                        )}
+                        <h1 className="text-base font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">
+                            {view === 'productos' ? 'Catálogo de Productos' : 'Control de Almacén e Inventario'}
+                        </h1>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1.5 font-semibold">Gestiona el catálogo oficial, existencias, alertas por SKU y tarifas unitarias o mayoristas.</p>
+                    <p className="text-[11px] text-slate-404 mt-1.5 font-semibold">
+                        {view === 'productos' 
+                            ? 'Gestiona la lista oficial de productos, SKUs, imágenes, categorías, costos and precios de venta.'
+                            : 'Monitorea las existencias en tiempo real, registra entradas o salidas de stock y realiza conteos físicos.'}
+                    </p>
                 </div>
                 {hasPermission(user, 'view_inventory') ? (
                     <div className="flex gap-2.5 flex-wrap">
-                        <button 
-                            onClick={() => {
-                                setIsStockInModalOpen(true);
-                                setActiveModalTab('form');
-                            }}
-                            className="py-2.5 px-4.5 bg-indigo-600 hover:bg-indigo-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-indigo-550/10 border border-indigo-550 transition-all cursor-pointer flex items-center gap-1.5"
-                        >
-                            <ArrowUpRight size={14} className="animate-pulse" />
-                            <span>Entrada de Stock (Rápido)</span>
-                        </button>
-                        <button 
-                            onClick={openCreateForm}
-                            className="py-2.5 px-4.5 bg-blue-600 hover:bg-blue-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-blue-500/10 border border-blue-550 transition-all cursor-pointer"
-                        >
-                            + Registrar Artículo
-                        </button>
-                        <button 
-                            onClick={() => setIsPhysicalCountOpen(true)}
-                            className="py-2.5 px-4.5 bg-indigo-600/90 hover:bg-indigo-600 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-indigo-650/10 border border-indigo-650 transition-all cursor-pointer flex items-center gap-1.5"
-                        >
-                            <ClipboardCheck size={14} />
-                            <span>Control Físico (Checklist)</span>
-                        </button>
-                        {user?.role === 'admin' && (
+                        {view === 'productos' ? (
                             <>
                                 <button 
-                                    onClick={downloadInventoryCSV}
-                                    className="py-2.5 px-4.5 bg-emerald-600 hover:bg-emerald-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-emerald-600/10 border border-emerald-600 transition-all cursor-pointer flex items-center gap-1.5"
-                                    title="Descargar Reporte de Inventario en formato CSV (Solo Administradores)"
+                                    onClick={openCreateForm}
+                                    className="py-2.5 px-4.5 bg-blue-600 hover:bg-blue-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-blue-500/10 border border-blue-550 transition-all cursor-pointer"
                                 >
-                                    <Download size={14} />
-                                    <span>Reporte CSV</span>
+                                    + Registrar Artículo
                                 </button>
+                                {user?.role === 'admin' && (
+                                    <button 
+                                        onClick={() => {
+                                            setImportSuccessResult(null);
+                                            setImportedProducts([]);
+                                            setImportError(null);
+                                            setIsImportModalOpen(true);
+                                        }}
+                                        className="py-2.5 px-4.5 bg-sky-600 hover:bg-sky-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-sky-600/10 border border-[#2c3e50]/20 transition-all cursor-pointer flex items-center gap-1.5"
+                                        title="Importar productos masivamente desde un archivo CSV"
+                                    >
+                                        <FileSpreadsheet size={14} />
+                                        <span>Importar CSV</span>
+                                    </button>
+                                )}
+                            </>
+                        ) : (
+                            <>
                                 <button 
                                     onClick={() => {
-                                        setImportSuccessResult(null);
-                                        setImportedProducts([]);
-                                        setImportError(null);
-                                        setIsImportModalOpen(true);
+                                        setIsStockInModalOpen(true);
+                                        setActiveModalTab('form');
                                     }}
-                                    className="py-2.5 px-4.5 bg-sky-600 hover:bg-sky-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-sky-600/10 border border-sky-600 transition-all cursor-pointer flex items-center gap-1.5"
-                                    title="Importar productos masivamente desde un archivo CSV"
+                                    className="py-2.5 px-4.5 bg-indigo-600 hover:bg-indigo-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-indigo-550/10 border border-indigo-550 transition-all cursor-pointer flex items-center gap-1.5"
                                 >
-                                    <FileSpreadsheet size={14} />
-                                    <span>Importar CSV</span>
+                                    <ArrowUpRight size={14} className="animate-pulse" />
+                                    <span>Entrada de Stock (Rápido)</span>
                                 </button>
+                                <button 
+                                    onClick={() => setIsPhysicalCountOpen(true)}
+                                    className="py-2.5 px-4.5 bg-indigo-600/90 hover:bg-indigo-600 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-indigo-650/10 border border-indigo-650 transition-all cursor-pointer flex items-center gap-1.5"
+                                >
+                                    <ClipboardCheck size={14} />
+                                    <span>Control Físico (Checklist)</span>
+                                </button>
+                                {user?.role === 'admin' && (
+                                    <button 
+                                        onClick={downloadInventoryCSV}
+                                        className="py-2.5 px-4.5 bg-emerald-600 hover:bg-emerald-500 hover:scale-[1.01] active:scale-95 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-emerald-600/10 border border-emerald-600 transition-all cursor-pointer flex items-center gap-1.5"
+                                        title="Descargar Reporte de Inventario en formato CSV (Solo Administradores)"
+                                    >
+                                        <Download size={14} />
+                                        <span>Reporte CSV</span>
+                                    </button>
+                                )}
                             </>
                         )}
                     </div>
@@ -1991,23 +2008,33 @@ export default function Inventory() {
                                 <th className="p-4">Código SKU</th>
                                 <th className="p-4">Descripción / Artículo</th>
                                 <th className="p-4">Categoría</th>
-                                <th className="p-4 text-right">Existencias</th>
-                                {user?.role === 'admin' && <th className="p-4 text-right">Precio Costo</th>}
-                                <th className="p-4 text-right">Precio Mayor</th>
-                                <th className="p-4 text-right">Precio Detalle</th>
+                                {view === 'productos' ? (
+                                    <>
+                                        {user?.role === 'admin' && <th className="p-4 text-right">Precio Costo</th>}
+                                        <th className="p-4 text-right">Precio Mayor</th>
+                                        <th className="p-4 text-right">Precio Detalle</th>
+                                        <th className="p-4 text-right">Stock</th>
+                                    </>
+                                ) : (
+                                    <>
+                                        <th className="p-4 text-right">Existencias</th>
+                                        <th className="p-4 text-right">Alerta Stock</th>
+                                        <th className="p-4 text-center">Estado</th>
+                                    </>
+                                )}
                                 <th className="p-4 text-center pr-6">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-850/50 text-[11px] font-bold">
                             {products.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="p-12 text-center text-slate-400">
+                                    <td colSpan={view === 'productos' ? (user?.role === 'admin' ? 9 : 8) : 8} className="p-12 text-center text-slate-400">
                                         No hay productos registrados en el inventario. Haz clic en "Agregar Producto" para insertar uno.
                                     </td>
                                 </tr>
                             ) : finalFilteredProducts.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="p-12 text-[#94a3b8] dark:text-zinc-500 font-bold text-center py-12">
+                                    <td colSpan={view === 'productos' ? (user?.role === 'admin' ? 9 : 8) : 8} className="p-12 text-[#94a3b8] dark:text-zinc-500 font-bold text-center py-12">
                                         🚫 Ningún artículo coincide con los filtros aplicados. Intenta con otra búsqueda o selecciona "Todos".
                                     </td>
                                 </tr>
@@ -2079,31 +2106,61 @@ export default function Inventory() {
                                                         {p.category}
                                                     </span>
                                                 </td>
-                                                <td className="p-4 text-right">
-                                                    <span className={`font-mono text-xs font-black ${lowStock ? 'text-rose-500' : 'text-slate-700 dark:text-slate-300'}`}>
-                                                        {p.stock} pz
-                                                    </span>
-                                                </td>
-                                                {user?.role === 'admin' && (
-                                                    <td className="p-4 text-right text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                                                        <div className="flex flex-col items-end">
-                                                            <span>${(Number(p.price_cost) || 0).toFixed(2)}</span>
-                                                            <span className="text-[9.5px] text-slate-404 font-bold opacity-80">({roundBs((Number(p.price_cost) || 0) * exchangeRate).toFixed(2)} Bs)</span>
-                                                        </div>
-                                                    </td>
+                                                {view === 'productos' ? (
+                                                    <>
+                                                        {user?.role === 'admin' && (
+                                                            <td className="p-4 text-right text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                                                                <div className="flex flex-col items-end">
+                                                                    <span>${(Number(p.price_cost) || 0).toFixed(2)}</span>
+                                                                    <span className="text-[9.5px] text-slate-400 font-bold opacity-80">({roundBs((Number(p.price_cost) || 0) * exchangeRate).toFixed(2)} Bs)</span>
+                                                                </div>
+                                                            </td>
+                                                        )}
+                                                        <td className="p-4 text-right text-xs font-bold font-mono text-purple-650 dark:text-purple-450">
+                                                            <div className="flex flex-col items-end">
+                                                                <span>${(Number(p.price_bulk) || 0).toFixed(2)}</span>
+                                                                <span className="text-[9.5px] text-slate-400 font-bold opacity-80">({roundBs((Number(p.price_bulk) || 0) * exchangeRate).toFixed(2)} Bs)</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4 text-right text-xs font-bold font-mono text-blue-600 dark:text-blue-400 bg-blue-500/2 dark:bg-blue-400/2">
+                                                            <div className="flex flex-col items-end">
+                                                                <span>${(Number(p.price_unit) || 0).toFixed(2)}</span>
+                                                                <span className="text-[9.5px] text-indigo-500 font-extrabold font-black">({roundBs((Number(p.price_unit) || 0) * exchangeRate).toFixed(2)} Bs)</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4 text-right">
+                                                            <span className={`font-mono text-xs font-black ${lowStock ? 'text-rose-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                {p.stock} pz
+                                                            </span>
+                                                        </td>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <td className="p-4 text-right">
+                                                            <span className={`font-mono text-xs font-black ${lowStock ? 'text-rose-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                {p.stock} pz
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4 text-right font-mono text-slate-400 dark:text-slate-500 text-xs">
+                                                            {p.stock_alarm} pz
+                                                        </td>
+                                                        <td className="p-4 text-center">
+                                                            {p.stock <= 0 ? (
+                                                                <span className="bg-rose-500/10 text-rose-500 border border-rose-550/15 text-[8.5px] uppercase font-black px-2 py-0.5 rounded-lg">
+                                                                    Sin stock
+                                                                </span>
+                                                            ) : lowStock ? (
+                                                                <span className="bg-amber-500/10 text-amber-550 border border-amber-550/15 text-[8.5px] uppercase font-black px-2 py-0.5 rounded-lg animate-pulse">
+                                                                    Stock Bajo
+                                                                </span>
+                                                            ) : (
+                                                                <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-550/15 text-[8.5px] uppercase font-black px-2 py-0.5 rounded-lg">
+                                                                    En Stock
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </>
                                                 )}
-                                                <td className="p-4 text-right text-xs font-bold font-mono text-purple-650 dark:text-purple-450">
-                                                    <div className="flex flex-col items-end">
-                                                        <span>${(Number(p.price_bulk) || 0).toFixed(2)}</span>
-                                                        <span className="text-[9.5px] text-slate-404 font-bold opacity-80">({roundBs((Number(p.price_bulk) || 0) * exchangeRate).toFixed(2)} Bs)</span>
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 text-right text-xs font-bold font-mono text-blue-600 dark:text-blue-400 bg-blue-500/2 dark:bg-blue-400/2">
-                                                    <div className="flex flex-col items-end">
-                                                        <span>${(Number(p.price_unit) || 0).toFixed(2)}</span>
-                                                        <span className="text-[9.5px] text-indigo-500 font-extrabold font-black">({roundBs((Number(p.price_unit) || 0) * exchangeRate).toFixed(2)} Bs)</span>
-                                                    </div>
-                                                </td>
                                                 <td className="p-4">
                                                     <div className="flex items-center justify-center gap-2 pr-2">
                                                         <button 
@@ -2134,7 +2191,7 @@ export default function Inventory() {
                                             {/* Beautiful Collapsible / Expanded panel row (Optimized to prevent price duplication on desktop) */}
                                             {isExpanded && (
                                                 <tr className="bg-slate-50/70 dark:bg-[#070b13]/40 border-y border-slate-150 dark:border-slate-850/80 animate-in slide-in-from-top-2 duration-200">
-                                                    <td colSpan={9} className="p-6">
+                                                    <td colSpan={view === 'productos' ? (user?.role === 'admin' ? 9 : 8) : 8} className="p-6">
                                                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                                                             {/* Product image section with lightbox zoom buttons */}
                                                             <div className="md:col-span-4 flex flex-col gap-2">

@@ -3,7 +3,8 @@ import { useAppContext } from '../context/AppContext';
 import { 
     Search, Calendar, User, Phone, Receipt, CircleDollarSign, CheckCircle2, 
     AlertCircle, History, Wallet, X, ArrowLeftRight, Landmark, Tag, 
-    Clock, Truck, Edit, Trash2, Plus, Minus, FileText, Check, Download, Printer
+    Clock, Truck, Edit, Trash2, Plus, Minus, FileText, Check, Download, Printer,
+    Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -787,6 +788,297 @@ export default function CuentasPorCobrarView() {
         }
     };
 
+    const generateWarehouseOrderPDF = (sale: any) => {
+        try {
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'letter'
+            });
+
+            const margin = 20;
+            const pageWidth = 215.9;
+            const contentWidth = pageWidth - (margin * 2); // 175.9
+            let y = 18;
+
+            // 1. TOP BAR ACCENT - Sophisticated slate/indigo border
+            doc.setFillColor(15, 23, 42); // slate-900 (Deep elegant corporate color)
+            doc.rect(0, 0, pageWidth, 5, 'F');
+
+            y += 12;
+
+            // 2. BRAND LOGOMARK (Geometric custom vector box icon)
+            // Left facet of 3D box
+            doc.setFillColor(71, 85, 105); // slate-600
+            doc.triangle(margin, y + 4, margin + 5, y + 1, margin + 5, y + 7, 'F');
+            // Right facet of 3D box
+            doc.setFillColor(148, 163, 184); // slate-400
+            doc.triangle(margin + 5, y + 1, margin + 10, y + 4, margin + 5, y + 7, 'F');
+            // Top lid of 3D box
+            doc.setFillColor(100, 116, 139); // slate-500
+            doc.triangle(margin, y + 4, margin + 5, y + 1, margin + 5, y + 1, 'F'); // helper
+            // We can draw a clean polygon for top lid: (margin, y+4) -> (margin+5, y+1) -> (margin+10, y+4) -> (margin+5, y+7)
+            // Instead, just a beautiful clean offset rect/lines
+            doc.setDrawColor(15, 23, 42);
+            doc.setLineWidth(0.4);
+            // Drawn clean outline of an industrial logo box
+            doc.line(margin + 5, y, margin + 5, y + 9);
+            doc.line(margin, y + 3, margin + 5, y + 9);
+            doc.line(margin + 10, y + 3, margin + 5, y + 9);
+            doc.line(margin, y + 3, margin + 5, y);
+            doc.line(margin + 10, y + 3, margin + 5, y);
+
+            // Brand Text
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(13);
+            doc.setTextColor(15, 23, 42); // slate-900
+            doc.text("GTR POS SYSTEM", margin + 14, y + 4.5);
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139); // slate-500
+            doc.text("LOGÍSTICA & DESPACHOS DE ALMACÉN", margin + 14, y + 8.5);
+
+            // 3. DOCUMENT METADATA (Right-aligned)
+            const rightAlignX = pageWidth - margin;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(15);
+            doc.setTextColor(15, 23, 42); // Deep Slate
+            doc.text("ORDEN DE CARGA Y DESPACHO", rightAlignX, y + 3.5, { align: 'right' });
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(11);
+            doc.setTextColor(29, 78, 216); // Royal Blue
+            doc.text(`Nº ORDEN: ALM-${sale.id}`, rightAlignX, y + 9.5, { align: 'right' });
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Emisión: ${new Date().toLocaleString('es-BO')}`, rightAlignX, y + 14, { align: 'right' });
+
+            y += 21;
+
+            // Thin Slate divider line
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.35);
+            doc.line(margin, y, rightAlignX, y);
+
+            y += 6;
+
+            // 4. SHIPMENT DETAILS GRID (Symmetric clean cards)
+            doc.setFillColor(248, 250, 252); // slate-50
+            doc.setDrawColor(226, 232, 240); // slate-200
+            doc.roundedRect(margin, y, contentWidth, 28, 4, 4, 'FD');
+
+            // Header for details card
+            doc.setFillColor(15, 23, 42); // deep slate header for details
+            // Draw a subtle horizontal accent bar inside
+            doc.rect(margin + 5, y + 5, 2, 4, 'F');
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.setTextColor(15, 23, 42);
+            doc.text("INFORMACIÓN DE DESPACHO Y DESTINO", margin + 9, y + 8.5);
+
+            // Left Column (Client & Contact)
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text("CLIENTE DESTINATARIO:", margin + 6, y + 16);
+            doc.text("Nº CELULAR / CONTACTO:", margin + 6, y + 22.5);
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text(sale.client_name ? sale.client_name.toUpperCase() : "CLIENTE GENERAL", margin + 44, y + 16);
+            doc.text(sale.client_phone || "NO REGISTRADO", margin + 44, y + 22.5);
+
+            // Right Column (Destination / Shipping address)
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text("DIRECCIÓN DE ENTREGA:", margin + 98, y + 16);
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(29, 78, 216); // Royal Blue highlights for logistics
+            const destText = sale.destination ? sale.destination.toUpperCase() : "ENTREGA EN TIENDA / RETIRO PERSONAL";
+            const wrappedDest = doc.splitTextToSize(destText, contentWidth - 104);
+            doc.text(wrappedDest, margin + 98, y + 21);
+
+            y += 36;
+
+            // 5. TABLE HEADER (Modern minimalist, high-contrast, beautiful layout)
+            doc.setFillColor(15, 23, 42); // slate-900 header
+            doc.roundedRect(margin, y, contentWidth, 9, 1.5, 1.5, 'F');
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(255, 255, 255);
+            doc.text("SKU", margin + 5, y + 6);
+            doc.text("DETALLE / DESCRIPCIÓN DEL PRODUCTO", margin + 35, y + 6);
+            doc.text("CANTIDAD", margin + 128, y + 6, { align: 'right' });
+            doc.text("CONTROL FÍSICO", margin + 168, y + 6, { align: 'right' });
+
+            y += 9;
+
+            // 6. TABLE ITEMS ROWS (Spacious, clean, beautifully striped, strictly no prices!)
+            let rowCount = 0;
+            let totalQtySum = 0;
+
+            sale.items.forEach((item: any) => {
+                rowCount++;
+                totalQtySum += item.quantity;
+
+                // Striping
+                if (rowCount % 2 === 0) {
+                    doc.setFillColor(248, 250, 252);
+                    doc.rect(margin, y, contentWidth, 10, 'F');
+                }
+
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.2);
+                doc.line(margin, y + 10, rightAlignX, y + 10);
+
+                // Draw SKU (in Mono/Courier font)
+                doc.setFont("courier", "bold");
+                doc.setFontSize(8.5);
+                doc.setTextColor(71, 85, 105);
+                const itemSku = item.product_sku || item.sku || 'S-SKU';
+                doc.text(itemSku, margin + 5, y + 6.5);
+
+                // Draw Product Description
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(8.5);
+                doc.setTextColor(15, 23, 42);
+                let nameStr = item.product_name || item.name || "PRODUCTO REGISTRADO";
+                if (nameStr.length > 52) nameStr = nameStr.substring(0, 49) + "...";
+                doc.text(nameStr.toUpperCase(), margin + 35, y + 6.5);
+
+                // Draw Quantity - Large, ultra-readable for loaders, in a clean box format
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(11);
+                doc.setTextColor(15, 23, 42);
+                doc.text(`${item.quantity} U.`, margin + 128, y + 6.5, { align: 'right' });
+
+                // Checkbox for manual inventory control (Aesthetic brackets)
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9);
+                doc.setTextColor(148, 163, 184); // soft slate
+                doc.text("[  ] CARGADO", margin + 168, y + 6.5, { align: 'right' });
+
+                y += 10;
+            });
+
+            y += 8;
+
+            // 7. TOTAL PHYSICAL PRODUCTS SUMMARY CARD (No monetary values)
+            const summaryWidth = 85;
+            const summaryX = rightAlignX - summaryWidth;
+
+            doc.setFillColor(241, 245, 249);
+            doc.setDrawColor(226, 232, 240);
+            doc.roundedRect(summaryX, y, summaryWidth, 11, 2, 2, 'FD');
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("TOTAL DE UNIDADES A DESPACHAR:", summaryX + 4, y + 7);
+
+            doc.setFont("helvetica", "black");
+            doc.setFontSize(11.5);
+            doc.setTextColor(29, 78, 216); // Royal Blue Total
+            doc.text(`${totalQtySum} UNIDADES`, rightAlignX - 4, y + 7.2, { align: 'right' });
+
+            // 8. LOGISTICS RULES & TERMS (Positioned gracefully near bottom)
+            y = Math.max(y + 25, 215);
+
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.4);
+            doc.line(margin, y, rightAlignX, y);
+
+            y += 5;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text("INSTRUCCIONES CRÍTICAS PARA EL PERSONAL DE CARGA Y ALMACÉN:", margin, y);
+
+            y += 4;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7);
+            doc.setTextColor(100, 116, 139);
+            doc.text("1. Esta orden contiene información logística confidencial. Queda prohibida la exhibición de montos monetarios o precios de venta.", margin, y);
+            doc.text("2. Verifique minuciosamente que los SKUs y cantidades coincidan con el inventario físico antes de firmar el conforme.", margin, y + 3.2);
+            doc.text("3. El transportista y el preparador son solidarios con la mercadería detallada a partir de la entrega física del presente documento.", margin, y + 6.4);
+
+            // 9. PROFESSIONAL TRIPLE SIGNATURE BLOCKS (Perfect alignment & spacing)
+            y += 24;
+            const colWidth = contentWidth / 3;
+
+            // Signature thin lines
+            doc.setDrawColor(148, 163, 184); // slate-400
+            doc.setLineWidth(0.35);
+            doc.line(margin + 5, y, margin + colWidth - 5, y);
+            doc.line(margin + colWidth + 5, y, margin + (colWidth * 2) - 5, y);
+            doc.line(margin + (colWidth * 2) + 5, y, rightAlignX - 5, y);
+
+            y += 4;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text("DESPACHADO / PREPARADO", margin + (colWidth / 2), y, { align: 'center' });
+            doc.text("TRANSPORTISTA / CHOFER", margin + colWidth + (colWidth / 2), y, { align: 'center' });
+            doc.text("RECIBIDO / CONFORME CLIENTE", margin + (colWidth * 2) + (colWidth / 2), y, { align: 'center' });
+
+            y += 3.5;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Firma y C.I. Responsable", margin + (colWidth / 2), y, { align: 'center' });
+            doc.text("Firma y Placa Vehículo", margin + colWidth + (colWidth / 2), y, { align: 'center' });
+            doc.text("Firma, Nombre y Fecha", margin + (colWidth * 2) + (colWidth / 2), y, { align: 'center' });
+
+            // Save PDF
+            doc.save(`Orden_Carga_Almacen_${sale.id}_${sale.client_name ? sale.client_name.replace(/\s+/g, '_') : 'General'}.pdf`);
+            showToast('✓ Orden de Almacén PDF descargada con diseño profesional.');
+
+            // INTEGRATION STEP: Trigger WhatsApp sharing automatically after PDF is ready!
+            handleShareWarehouseWhatsApp(sale);
+
+        } catch (err: any) {
+            console.error(err);
+            showToast('Error al generar la orden de almacén', 'error');
+        }
+    };
+
+    const handleShareWarehouseWhatsApp = (sale: any) => {
+        const itemsText = sale.items && sale.items.map((it: any) => `📦 *${it.quantity} unids.* de ${it.product_name}`).join('\n') || '';
+        
+        let message = `*GTR POS • ORDEN DE CARGA / ALMACÉN (ORDEN #${sale.id})*\n`;
+        message += `_Emisión: ${new Date().toLocaleString('es-BO')}_\n\n`;
+        message += `👤 *Cliente:* ${sale.client_name ? sale.client_name.toUpperCase() : "CLIENTE GENERAL"}\n`;
+        if (sale.client_phone) message += `📞 *Celular:* ${sale.client_phone}\n`;
+        if (sale.destination) message += `📍 *Dirección/Destino:* ${sale.destination.toUpperCase()}\n`;
+        message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `*DETALLE DE CARGA (SOLO CANTIDADES)*\n`;
+        message += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `${itemsText}\n`;
+        message += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        message += `💡 _Por favor, alistar, empaquetar y verificar físicamente las cantidades especificadas antes de despachar._\n`;
+        message += `📑 _El PDF oficial firmado por almacén se ha descargado de forma local._`;
+        
+        const encodedMessage = encodeURIComponent(message);
+        const url = `https://api.whatsapp.com/send?text=${encodedMessage}`;
+        
+        const win = window.open(url, '_blank');
+        if (!win) {
+            navigator.clipboard.writeText(message);
+            showToast('✓ PDF descargado y texto de orden copiado. Pegue en WhatsApp.');
+        } else {
+            showToast('✓ Abriendo WhatsApp para coordinar despacho con almacenes.');
+        }
+    };
+
     // Opening Edit Modal and cloning existing sale values
     const handleStartEdit = (sale: any) => {
         setEditingSale(sale);
@@ -1251,6 +1543,18 @@ export default function CuentasPorCobrarView() {
                                                             <span className="text-[9px] font-black uppercase">Cobrar</span>
                                                         </button>
                                                     </div>
+
+                                                    <div className="mt-1.5">
+                                                        {/* Unificado: Orden Almacén (PDF + WhatsApp) */}
+                                                        <button
+                                                            onClick={() => generateWarehouseOrderPDF(sale)}
+                                                            className="w-full p-2.5 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-250 dark:border-slate-700 rounded-xl transition cursor-pointer flex items-center gap-2 justify-center font-extrabold"
+                                                            title="Descarga la orden de carga en PDF (sin precios) y abre WhatsApp para coordinar despacho con almacenes"
+                                                        >
+                                                            <Package size={13} className="text-blue-500 dark:text-blue-400" />
+                                                            <span className="text-[9.5px] font-black uppercase tracking-wider">Orden Almacén (PDF + WhatsApp)</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -1551,7 +1855,23 @@ export default function CuentasPorCobrarView() {
                                                 <div key={idx} className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-black/20 border border-slate-150 dark:border-slate-850 rounded-xl gap-2">
                                                     <div className="flex-grow min-w-0">
                                                         <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block truncate">{item.product_name}</span>
-                                                        <span className="text-[9.5px] text-slate-400 font-mono">Bs. {item.price.toFixed(2)} unit. • Stock: {item.current_stock || 0}</span>
+                                                        <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400 font-mono mt-1">
+                                                            <span>Bs.</span>
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                min="0"
+                                                                value={item.price}
+                                                                onChange={(e) => {
+                                                                    const val = Number(e.target.value);
+                                                                    setEditedItems(prev => prev.map(it => 
+                                                                        it.product_id === item.product_id ? { ...it, price: isNaN(val) ? 0 : val } : it
+                                                                    ));
+                                                                }}
+                                                                className="w-16 px-1.5 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-bold text-[10px] text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 font-mono text-center shrink-0"
+                                                            />
+                                                            <span>• Stock: {item.current_stock || 0}</span>
+                                                        </div>
                                                     </div>
                                                     <div className="flex items-center gap-1.5 shrink-0 select-none">
                                                         <button 
