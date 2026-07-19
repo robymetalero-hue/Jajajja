@@ -612,6 +612,7 @@ export default function POS() {
     const [pendingClientName, setPendingClientName] = useState("");
     const [pendingDestination, setPendingDestination] = useState("");
     const [pendingClientPhone, setPendingClientPhone] = useState("");
+    const [pendingTransportCompany, setPendingTransportCompany] = useState("");
     const [isSavingPending, setIsSavingPending] = useState(false);
 
     const handleSavePendingSale = async (e: React.FormEvent) => {
@@ -635,6 +636,7 @@ export default function POS() {
                     client_name: pendingClientName.trim(),
                     destination: pendingDestination.trim(),
                     client_phone: pendingClientPhone.trim() || null,
+                    transport_company: pendingTransportCompany.trim() || null,
                     total: subtotal,
                     discount: 0,
                     items
@@ -646,6 +648,7 @@ export default function POS() {
                 setPendingClientName("");
                 setPendingDestination("");
                 setPendingClientPhone("");
+                setPendingTransportCompany("");
                 setIsPendingSaleModalOpen(false);
                 showNotification("📦 ¡Pedido guardado como Venta Pendiente para envío con éxito!", "success");
             } else {
@@ -3186,6 +3189,17 @@ export default function POS() {
                                         onChange={(e) => setPendingDestination(e.target.value)}
                                         placeholder="Ej. Calle Aroma #420, Cochabamba (Envío por flota o delivery)"
                                         className="w-full bg-slate-50 dark:bg-black/20 border border-slate-205 dark:border-slate-850 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 text-slate-700 dark:text-slate-200 placeholder-slate-400 resize-none"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Empresa de Transporte (Opcional)</label>
+                                    <input 
+                                        type="text"
+                                        value={pendingTransportCompany}
+                                        onChange={(e) => setPendingTransportCompany(e.target.value)}
+                                        placeholder="Ej. Trans Copacabana, Delivery Moto, etc."
+                                        className="w-full bg-slate-50 dark:bg-black/20 border border-slate-205 dark:border-slate-850 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 text-slate-700 dark:text-slate-200 placeholder-slate-400"
                                     />
                                 </div>
 

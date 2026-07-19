@@ -69,6 +69,7 @@ export default function CuentasPorCobrarView() {
     const [editedClientName, setEditedClientName] = useState('');
     const [editedDestination, setEditedDestination] = useState('');
     const [editedClientPhone, setEditedClientPhone] = useState('');
+    const [editedTransportCompany, setEditedTransportCompany] = useState('');
     const [editedItems, setEditedItems] = useState<any[]>([]); // items currently in the edited order
     const [productList, setProductList] = useState<any[]>([]); // full product list for adding items
     const [productSearchQuery, setProductSearchQuery] = useState('');
@@ -796,133 +797,163 @@ export default function CuentasPorCobrarView() {
                 format: 'letter'
             });
 
-            const margin = 20;
+            const margin = 15;
             const pageWidth = 215.9;
-            const contentWidth = pageWidth - (margin * 2); // 175.9
-            let y = 18;
+            const pageHeight = 279.4;
+            const contentWidth = pageWidth - (margin * 2); // 185.9
+            let y = 15;
 
-            // 1. TOP BAR ACCENT - Sophisticated slate/indigo border
-            doc.setFillColor(15, 23, 42); // slate-900 (Deep elegant corporate color)
-            doc.rect(0, 0, pageWidth, 5, 'F');
+            // 1. TOP ELEGANT ACCENT LINE (Two-tone design: Slate & Royal Indigo)
+            doc.setFillColor(15, 23, 42); // slate-900 (Primary accent)
+            doc.rect(margin, y, contentWidth, 1.5, 'F');
+            doc.setFillColor(79, 70, 229); // indigo-600 (Secondary accent)
+            doc.rect(margin, y + 1.5, 30, 1.5, 'F');
 
-            y += 12;
+            y += 8;
 
-            // 2. BRAND LOGOMARK (Geometric custom vector box icon)
-            // Left facet of 3D box
-            doc.setFillColor(71, 85, 105); // slate-600
-            doc.triangle(margin, y + 4, margin + 5, y + 1, margin + 5, y + 7, 'F');
-            // Right facet of 3D box
-            doc.setFillColor(148, 163, 184); // slate-400
-            doc.triangle(margin + 5, y + 1, margin + 10, y + 4, margin + 5, y + 7, 'F');
-            // Top lid of 3D box
-            doc.setFillColor(100, 116, 139); // slate-500
-            doc.triangle(margin, y + 4, margin + 5, y + 1, margin + 5, y + 1, 'F'); // helper
-            // We can draw a clean polygon for top lid: (margin, y+4) -> (margin+5, y+1) -> (margin+10, y+4) -> (margin+5, y+7)
-            // Instead, just a beautiful clean offset rect/lines
+            // 2. BRAND LOGO AND GRAPHIC ICON
+            // Draw a high-end vector logomark representing "GTR" (Hexagonal/industrial icon)
+            const logoX = margin;
+            const logoY = y;
+            
             doc.setDrawColor(15, 23, 42);
+            doc.setLineWidth(0.6);
+            
+            // Outer hexagon
+            const r = 4.5;
+            const cx = logoX + 5;
+            const cy = logoY + 5;
+            doc.setFillColor(15, 23, 42);
+            doc.ellipse(cx, cy, r, r, 'F');
+            
+            // Inner white core
+            doc.setFillColor(255, 255, 255);
+            doc.ellipse(cx, cy, 2, 2, 'F');
+            
+            // Stylized wings/brackets
+            doc.setDrawColor(79, 70, 229);
             doc.setLineWidth(0.4);
-            // Drawn clean outline of an industrial logo box
-            doc.line(margin + 5, y, margin + 5, y + 9);
-            doc.line(margin, y + 3, margin + 5, y + 9);
-            doc.line(margin + 10, y + 3, margin + 5, y + 9);
-            doc.line(margin, y + 3, margin + 5, y);
-            doc.line(margin + 10, y + 3, margin + 5, y);
+            doc.line(cx - 6, cy, cx - 4, cy - 4);
+            doc.line(cx - 6, cy, cx - 4, cy + 4);
+            doc.line(cx + 6, cy, cx + 4, cy - 4);
+            doc.line(cx + 6, cy, cx + 4, cy + 4);
 
             // Brand Text
             doc.setFont("helvetica", "bold");
-            doc.setFontSize(13);
-            doc.setTextColor(15, 23, 42); // slate-900
-            doc.text("GTR POS SYSTEM", margin + 14, y + 4.5);
+            doc.setFontSize(14);
+            doc.setTextColor(15, 23, 42);
+            doc.text("GTR POS SYSTEM", margin + 14, y + 4);
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
-            doc.setTextColor(100, 116, 139); // slate-500
-            doc.text("LOGÍSTICA & DESPACHOS DE ALMACÉN", margin + 14, y + 8.5);
+            doc.setTextColor(79, 70, 229); // Indigo Accent
+            doc.text("SISTEMA DE CONTROL DE INVENTARIOS & LOGÍSTICA", margin + 14, y + 8);
 
             // 3. DOCUMENT METADATA (Right-aligned)
             const rightAlignX = pageWidth - margin;
             doc.setFont("helvetica", "bold");
             doc.setFontSize(15);
             doc.setTextColor(15, 23, 42); // Deep Slate
-            doc.text("ORDEN DE CARGA Y DESPACHO", rightAlignX, y + 3.5, { align: 'right' });
+            doc.text("ORDEN DE CARGA / ALMACÉN", rightAlignX, y + 3, { align: 'right' });
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(11);
-            doc.setTextColor(29, 78, 216); // Royal Blue
-            doc.text(`Nº ORDEN: ALM-${sale.id}`, rightAlignX, y + 9.5, { align: 'right' });
+            doc.setTextColor(79, 70, 229); // Indigo/Blue
+            doc.text(`CÓDIGO: ALM-${sale.id}`, rightAlignX, y + 8, { align: 'right' });
 
             doc.setFont("helvetica", "normal");
             doc.setFontSize(8);
             doc.setTextColor(100, 116, 139);
-            doc.text(`Emisión: ${new Date().toLocaleString('es-BO')}`, rightAlignX, y + 14, { align: 'right' });
+            doc.text(`Fecha Emisión: ${new Date().toLocaleString('es-BO')}`, rightAlignX, y + 12, { align: 'right' });
 
-            y += 21;
+            y += 18;
 
-            // Thin Slate divider line
+            // Clean Divider Line
             doc.setDrawColor(226, 232, 240);
-            doc.setLineWidth(0.35);
+            doc.setLineWidth(0.5);
             doc.line(margin, y, rightAlignX, y);
 
-            y += 6;
+            y += 5;
 
-            // 4. SHIPMENT DETAILS GRID (Symmetric clean cards)
+            // 4. SHIPMENT DETAILS GRID (Beautiful split panel)
+            // Left Panel: Destination & Client details
+            const colWidthHalf = contentWidth / 2 - 2;
+
+            // Draw a subtle border frame for Details Panel
             doc.setFillColor(248, 250, 252); // slate-50
             doc.setDrawColor(226, 232, 240); // slate-200
-            doc.roundedRect(margin, y, contentWidth, 28, 4, 4, 'FD');
+            doc.setLineWidth(0.3);
+            doc.roundedRect(margin, y, contentWidth, 36, 4, 4, 'FD');
 
-            // Header for details card
-            doc.setFillColor(15, 23, 42); // deep slate header for details
-            // Draw a subtle horizontal accent bar inside
-            doc.rect(margin + 5, y + 5, 2, 4, 'F');
-
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(9);
-            doc.setTextColor(15, 23, 42);
-            doc.text("INFORMACIÓN DE DESPACHO Y DESTINO", margin + 9, y + 8.5);
-
-            // Left Column (Client & Contact)
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(8);
-            doc.setTextColor(100, 116, 139);
-            doc.text("CLIENTE DESTINATARIO:", margin + 6, y + 16);
-            doc.text("Nº CELULAR / CONTACTO:", margin + 6, y + 22.5);
-
+            // Header for details section
+            doc.setFillColor(15, 23, 42);
+            doc.roundedRect(margin + 5, y + 4, 3, 3, 0.5, 0.5, 'F');
+            
             doc.setFont("helvetica", "bold");
             doc.setFontSize(8.5);
             doc.setTextColor(15, 23, 42);
-            doc.text(sale.client_name ? sale.client_name.toUpperCase() : "CLIENTE GENERAL", margin + 44, y + 16);
-            doc.text(sale.client_phone || "NO REGISTRADO", margin + 44, y + 22.5);
+            doc.text("INFORMACIÓN DE DESPACHO & LOGÍSTICA", margin + 10, y + 6.5);
 
-            // Right Column (Destination / Shipping address)
+            // Details rows
+            const textYStart = y + 13;
+            
             doc.setFont("helvetica", "bold");
             doc.setFontSize(8);
             doc.setTextColor(100, 116, 139);
-            doc.text("DIRECCIÓN DE ENTREGA:", margin + 98, y + 16);
+            doc.text("CLIENTE RECEPTOR:", margin + 6, textYStart);
+            doc.text("Nº DE CELULAR:", margin + 6, textYStart + 6);
+            doc.text("DIRECCIÓN DE ENVÍO:", margin + 6, textYStart + 12);
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(8.5);
-            doc.setTextColor(29, 78, 216); // Royal Blue highlights for logistics
-            const destText = sale.destination ? sale.destination.toUpperCase() : "ENTREGA EN TIENDA / RETIRO PERSONAL";
-            const wrappedDest = doc.splitTextToSize(destText, contentWidth - 104);
-            doc.text(wrappedDest, margin + 98, y + 21);
+            doc.setTextColor(15, 23, 42);
+            doc.text(sale.client_name ? sale.client_name.toUpperCase() : "CLIENTE GENERAL / PARTICULAR", margin + 38, textYStart);
+            doc.text(sale.client_phone || "NO ESPECIFICADO", margin + 38, textYStart + 6);
 
-            y += 36;
+            const destText = sale.destination ? sale.destination.toUpperCase() : "RETIRO EN TIENDA / CONFORME EN MOSTRADOR";
+            const wrappedDest = doc.splitTextToSize(destText, colWidthHalf + 10);
+            doc.text(wrappedDest, margin + 38, textYStart + 12);
 
-            // 5. TABLE HEADER (Modern minimalist, high-contrast, beautiful layout)
-            doc.setFillColor(15, 23, 42); // slate-900 header
-            doc.roundedRect(margin, y, contentWidth, 9, 1.5, 1.5, 'F');
+            // Right column: Transport details
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text("EMPRESA TRANSPORTE:", margin + 105, textYStart);
+            doc.text("MODALIDAD ENTREGA:", margin + 105, textYStart + 6);
+            doc.text("ESTADO DE CARGA:", margin + 105, textYStart + 12);
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(8.5);
+            doc.setTextColor(79, 70, 229); // Royal Indigo Highlight
+            doc.text(sale.transport_company ? sale.transport_company.toUpperCase() : "NO ASIGNADA (PENDIENTE)", margin + 142, textYStart);
+            
+            doc.setTextColor(15, 23, 42);
+            doc.text(sale.transport_company ? "ENVÍO DE CARGA" : "RETIRO DIRECTO", margin + 142, textYStart + 6);
+            
+            doc.setFillColor(254, 243, 199); // amber-100
+            doc.roundedRect(margin + 142, textYStart + 10.5, 30, 4.5, 1, 1, 'F');
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(180, 83, 9); // amber-700
+            doc.text("PENDIENTE REVISIÓN", margin + 144, textYStart + 13.8);
+
+            y += 42;
+
+            // 5. TABLE HEADER
+            doc.setFillColor(15, 23, 42); // Deep slate
+            doc.roundedRect(margin, y, contentWidth, 8, 1, 1, 'F');
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
             doc.setTextColor(255, 255, 255);
-            doc.text("SKU", margin + 5, y + 6);
-            doc.text("DETALLE / DESCRIPCIÓN DEL PRODUCTO", margin + 35, y + 6);
-            doc.text("CANTIDAD", margin + 128, y + 6, { align: 'right' });
-            doc.text("CONTROL FÍSICO", margin + 168, y + 6, { align: 'right' });
+            doc.text("SKU / CÓDIGO", margin + 5, y + 5.2);
+            doc.text("DETALLE / DESCRIPCIÓN DEL PRODUCTO", margin + 40, y + 5.2);
+            doc.text("CANTIDAD", margin + 138, y + 5.2, { align: 'right' });
+            doc.text("REVISIÓN FÍSICA", margin + 178, y + 5.2, { align: 'right' });
 
-            y += 9;
+            y += 8;
 
-            // 6. TABLE ITEMS ROWS (Spacious, clean, beautifully striped, strictly no prices!)
+            // 6. TABLE ITEMS ROWS (Spacious, elegant layout with no prices)
             let rowCount = 0;
             let totalQtySum = 0;
 
@@ -930,89 +961,89 @@ export default function CuentasPorCobrarView() {
                 rowCount++;
                 totalQtySum += item.quantity;
 
-                // Striping
+                // Alternate row striping
                 if (rowCount % 2 === 0) {
                     doc.setFillColor(248, 250, 252);
-                    doc.rect(margin, y, contentWidth, 10, 'F');
+                    doc.rect(margin, y, contentWidth, 9, 'F');
                 }
 
                 doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.2);
-                doc.line(margin, y + 10, rightAlignX, y + 10);
+                doc.setLineWidth(0.35);
+                doc.line(margin, y + 9, rightAlignX, y + 9);
 
-                // Draw SKU (in Mono/Courier font)
+                // Draw SKU (Courier Mono)
                 doc.setFont("courier", "bold");
-                doc.setFontSize(8.5);
+                doc.setFontSize(8);
                 doc.setTextColor(71, 85, 105);
                 const itemSku = item.product_sku || item.sku || 'S-SKU';
-                doc.text(itemSku, margin + 5, y + 6.5);
+                doc.text(itemSku, margin + 5, y + 5.8);
 
-                // Draw Product Description
+                // Draw Name (Truncated cleanly if too long)
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(8.5);
+                doc.setFontSize(8);
                 doc.setTextColor(15, 23, 42);
                 let nameStr = item.product_name || item.name || "PRODUCTO REGISTRADO";
-                if (nameStr.length > 52) nameStr = nameStr.substring(0, 49) + "...";
-                doc.text(nameStr.toUpperCase(), margin + 35, y + 6.5);
+                if (nameStr.length > 55) nameStr = nameStr.substring(0, 52) + "...";
+                doc.text(nameStr.toUpperCase(), margin + 40, y + 5.8);
 
-                // Draw Quantity - Large, ultra-readable for loaders, in a clean box format
+                // Draw Quantity with distinct visual weighting
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(11);
+                doc.setFontSize(10);
                 doc.setTextColor(15, 23, 42);
-                doc.text(`${item.quantity} U.`, margin + 128, y + 6.5, { align: 'right' });
+                doc.text(`${item.quantity} U.`, margin + 138, y + 5.8, { align: 'right' });
 
-                // Checkbox for manual inventory control (Aesthetic brackets)
+                // Checkbox for manual count verification
                 doc.setFont("helvetica", "normal");
-                doc.setFontSize(9);
-                doc.setTextColor(148, 163, 184); // soft slate
-                doc.text("[  ] CARGADO", margin + 168, y + 6.5, { align: 'right' });
+                doc.setFontSize(8);
+                doc.setTextColor(148, 163, 184);
+                doc.text("[  ] CONFORME", margin + 178, y + 5.8, { align: 'right' });
 
-                y += 10;
+                y += 9;
             });
 
-            y += 8;
+            y += 6;
 
-            // 7. TOTAL PHYSICAL PRODUCTS SUMMARY CARD (No monetary values)
-            const summaryWidth = 85;
+            // 7. TOTAL PHYSICAL PRODUCTS SUMMARY BOX
+            const summaryWidth = 90;
             const summaryX = rightAlignX - summaryWidth;
 
             doc.setFillColor(241, 245, 249);
             doc.setDrawColor(226, 232, 240);
-            doc.roundedRect(summaryX, y, summaryWidth, 11, 2, 2, 'FD');
+            doc.roundedRect(summaryX, y, summaryWidth, 10, 2, 2, 'FD');
 
             doc.setFont("helvetica", "bold");
-            doc.setFontSize(8.5);
+            doc.setFontSize(8);
             doc.setTextColor(71, 85, 105);
-            doc.text("TOTAL DE UNIDADES A DESPACHAR:", summaryX + 4, y + 7);
+            doc.text("TOTAL UNIDADES A DESPACHAR:", summaryX + 4, y + 6.2);
 
-            doc.setFont("helvetica", "black");
-            doc.setFontSize(11.5);
-            doc.setTextColor(29, 78, 216); // Royal Blue Total
-            doc.text(`${totalQtySum} UNIDADES`, rightAlignX - 4, y + 7.2, { align: 'right' });
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10.5);
+            doc.setTextColor(79, 70, 229); // Indigo Accent
+            doc.text(`${totalQtySum} UNIDADES`, rightAlignX - 4, y + 6.4, { align: 'right' });
 
-            // 8. LOGISTICS RULES & TERMS (Positioned gracefully near bottom)
-            y = Math.max(y + 25, 215);
+            // 8. LOGISTICS RULES & GUARANTEES (Perfect bottom alignment)
+            y = Math.max(y + 22, 212);
 
             doc.setDrawColor(226, 232, 240);
             doc.setLineWidth(0.4);
             doc.line(margin, y, rightAlignX, y);
 
-            y += 5;
+            y += 4;
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(15, 23, 42);
-            doc.text("INSTRUCCIONES CRÍTICAS PARA EL PERSONAL DE CARGA Y ALMACÉN:", margin, y);
+            doc.text("NORMAS OPERATIVAS & CONTROL DE CALIDAD EN ALMACÉN:", margin, y);
 
-            y += 4;
+            y += 3.5;
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(7);
+            doc.setFontSize(6.8);
             doc.setTextColor(100, 116, 139);
-            doc.text("1. Esta orden contiene información logística confidencial. Queda prohibida la exhibición de montos monetarios o precios de venta.", margin, y);
-            doc.text("2. Verifique minuciosamente que los SKUs y cantidades coincidan con el inventario físico antes de firmar el conforme.", margin, y + 3.2);
-            doc.text("3. El transportista y el preparador son solidarios con la mercadería detallada a partir de la entrega física del presente documento.", margin, y + 6.4);
+            doc.text("• Prohibido adjuntar precios o valorizaciones económicas a este documento para resguardo de la confidencialidad de costos.", margin, y);
+            doc.text("• Verifique físicamente cada uno de los SKUs enumerados y el estado general de embalaje antes de firmar el acuse de recibo de carga.", margin, y + 3);
+            doc.text("• Una vez firmada la orden por el transportista, se asume responsabilidad solidaria del cargamento durante el trayecto.", margin, y + 6);
 
-            // 9. PROFESSIONAL TRIPLE SIGNATURE BLOCKS (Perfect alignment & spacing)
-            y += 24;
+            // 9. PROFESSIONAL TRIPLE SIGNATURE BOX
+            y += 22;
             const colWidth = contentWidth / 3;
 
             // Signature thin lines
@@ -1022,20 +1053,20 @@ export default function CuentasPorCobrarView() {
             doc.line(margin + colWidth + 5, y, margin + (colWidth * 2) - 5, y);
             doc.line(margin + (colWidth * 2) + 5, y, rightAlignX - 5, y);
 
-            y += 4;
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(7.5);
-            doc.setTextColor(15, 23, 42);
-            doc.text("DESPACHADO / PREPARADO", margin + (colWidth / 2), y, { align: 'center' });
-            doc.text("TRANSPORTISTA / CHOFER", margin + colWidth + (colWidth / 2), y, { align: 'center' });
-            doc.text("RECIBIDO / CONFORME CLIENTE", margin + (colWidth * 2) + (colWidth / 2), y, { align: 'center' });
-
             y += 3.5;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7);
+            doc.setTextColor(15, 23, 42);
+            doc.text("DESPACHADO POR (ALMACÉN)", margin + (colWidth / 2), y, { align: 'center' });
+            doc.text("TRANSPORTISTA / CHOFER", margin + colWidth + (colWidth / 2), y, { align: 'center' });
+            doc.text("RECIBIDO CONFORME (CLIENTE)", margin + (colWidth * 2) + (colWidth / 2), y, { align: 'center' });
+
+            y += 3;
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(6.5);
+            doc.setFontSize(6);
             doc.setTextColor(148, 163, 184);
-            doc.text("Firma y C.I. Responsable", margin + (colWidth / 2), y, { align: 'center' });
-            doc.text("Firma y Placa Vehículo", margin + colWidth + (colWidth / 2), y, { align: 'center' });
+            doc.text("Firma y C.I. Operador", margin + (colWidth / 2), y, { align: 'center' });
+            doc.text("Firma, Nombre y Placa", margin + colWidth + (colWidth / 2), y, { align: 'center' });
             doc.text("Firma, Nombre y Fecha", margin + (colWidth * 2) + (colWidth / 2), y, { align: 'center' });
 
             // Create PDF File for Sharing / Saving
@@ -1043,7 +1074,7 @@ export default function CuentasPorCobrarView() {
             const pdfBlob = doc.output('blob');
             const pdfFile = new File([pdfBlob], pdfFileName, { type: 'application/pdf' });
 
-            // On mobile / modern browsers, use navigator.share to share the ACTUAL PDF directly!
+            // Share PDF directly if supported
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
                 try {
                     await navigator.share({
@@ -1052,13 +1083,13 @@ export default function CuentasPorCobrarView() {
                         text: `Adjunto la Orden de Carga #${sale.id} para el despacho correspondiente.`
                     });
                     showToast('✓ Orden de Almacén compartida con éxito.');
-                    return; // Avoid downloading since it was shared directly!
+                    return;
                 } catch (shareErr) {
                     console.log('User cancelled or sharing was not completed:', shareErr);
                 }
             }
 
-            // Fallback for desktop / standard browsers: Download PDF and prompt WhatsApp details
+            // Fallback for desktop: Download & Open WhatsApp message
             doc.save(pdfFileName);
             showToast('✓ Orden de Almacén PDF descargada con diseño profesional.');
             handleShareWarehouseWhatsApp(sale);
@@ -1076,6 +1107,7 @@ export default function CuentasPorCobrarView() {
         message += `_Emisión: ${new Date().toLocaleString('es-BO')}_\n\n`;
         message += `👤 *Cliente:* ${sale.client_name ? sale.client_name.toUpperCase() : "CLIENTE GENERAL"}\n`;
         if (sale.client_phone) message += `📞 *Celular:* ${sale.client_phone}\n`;
+        if (sale.transport_company) message += `🚛 *Transporte:* ${sale.transport_company.toUpperCase()}\n`;
         if (sale.destination) message += `📍 *Dirección/Destino:* ${sale.destination.toUpperCase()}\n`;
         message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
         message += `*DETALLE DE CARGA (SOLO CANTIDADES)*\n`;
@@ -1103,6 +1135,7 @@ export default function CuentasPorCobrarView() {
         setEditedClientName(sale.client_name || '');
         setEditedDestination(sale.destination || '');
         setEditedClientPhone(sale.client_phone || '');
+        setEditedTransportCompany(sale.transport_company || '');
         setEditedItems(sale.items.map((i: any) => ({
             product_id: i.product_id,
             product_name: i.product_name,
@@ -1178,6 +1211,7 @@ export default function CuentasPorCobrarView() {
                     client_name: editedClientName.trim(),
                     destination: editedDestination.trim(),
                     client_phone: editedClientPhone.trim() || null,
+                    transport_company: editedTransportCompany.trim() || null,
                     total: newTotal,
                     discount: 0,
                     items: editedItems.map(i => ({
@@ -1422,6 +1456,12 @@ export default function CuentasPorCobrarView() {
                                                             <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold font-mono">
                                                                 <Phone size={11} className="text-slate-400" />
                                                                 <span>{sale.client_phone}</span>
+                                                            </div>
+                                                        )}
+                                                        {sale.transport_company && (
+                                                            <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400 font-extrabold uppercase font-mono">
+                                                                <span className="text-[8px] bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded-md border border-amber-500/20">TRSP:</span>
+                                                                <span className="truncate">{sale.transport_company}</span>
                                                             </div>
                                                         )}
                                                         {sale.destination && (
@@ -1860,6 +1900,17 @@ export default function CuentasPorCobrarView() {
                                             required
                                             value={editedDestination}
                                             onChange={(e) => setEditedDestination(e.target.value)}
+                                            className="bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:border-indigo-500 dark:text-slate-200"
+                                        />
+                                    </div>
+
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Empresa de Transporte</label>
+                                        <input 
+                                            type="text"
+                                            value={editedTransportCompany}
+                                            onChange={(e) => setEditedTransportCompany(e.target.value)}
+                                            placeholder="Ej. Trans Copacabana, Delivery Moto, etc."
                                             className="bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:border-indigo-500 dark:text-slate-200"
                                         />
                                     </div>

@@ -170,6 +170,7 @@ db.exec(`
     client_name TEXT,
     destination TEXT,
     client_phone TEXT,
+    transport_company TEXT DEFAULT NULL,
     total REAL DEFAULT 0.0,
     discount REAL DEFAULT 0.0,
     exchange_rate REAL DEFAULT 6.96,
@@ -337,6 +338,10 @@ try {
 
 try {
   db.exec("ALTER TABLE pending_sales ADD COLUMN paid_amount REAL DEFAULT 0.0");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE pending_sales ADD COLUMN transport_company TEXT DEFAULT NULL");
 } catch (e: any) {}
 
 try {

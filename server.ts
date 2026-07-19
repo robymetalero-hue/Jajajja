@@ -3466,7 +3466,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   });
 
   app.post("/api/pending-sales", (req, res) => {
-    const { client_name, destination, client_phone, total, discount, exchange_rate, currency, items } = req.body;
+    const { client_name, destination, client_phone, transport_company, total, discount, exchange_rate, currency, items } = req.body;
     if (!client_name || !destination) {
       return res.status(400).json({ error: "Nombre de cliente y destino son obligatorios para ventas pendientes." });
     }
@@ -3480,9 +3480,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       
       const { pendingSaleId, itemIds } = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO pending_sales (client_name, destination, client_phone, total, discount, exchange_rate, currency, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente')
-        `).run(client_name, destination, client_phone || null, total || 0, discount || 0, currentRate, currency || 'BOB');
+          INSERT INTO pending_sales (client_name, destination, client_phone, transport_company, total, discount, exchange_rate, currency, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')
+        `).run(client_name, destination, client_phone || null, transport_company || null, total || 0, discount || 0, currentRate, currency || 'BOB');
         const pendingSaleId = result.lastInsertRowid;
         const itemIds: any[] = [];
         
@@ -3511,7 +3511,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
   app.put("/api/pending-sales/:id", (req, res) => {
     const { id } = req.params;
-    const { client_name, destination, client_phone, total, discount, items } = req.body;
+    const { client_name, destination, client_phone, transport_company, total, discount, items } = req.body;
     if (!client_name || !destination) {
       return res.status(400).json({ error: "Nombre de cliente y destino son obligatorios." });
     }
@@ -3523,9 +3523,9 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       db.transaction(() => {
         db.prepare(`
           UPDATE pending_sales
-          SET client_name = ?, destination = ?, client_phone = ?, total = ?, discount = ?
+          SET client_name = ?, destination = ?, client_phone = ?, transport_company = ?, total = ?, discount = ?
           WHERE id = ?
-        `).run(client_name, destination, client_phone || null, total || 0, discount || 0, id);
+        `).run(client_name, destination, client_phone || null, transport_company || null, total || 0, discount || 0, id);
         
         db.prepare(`DELETE FROM pending_sale_items WHERE pending_sale_id = ?`).run(id);
         
