@@ -788,7 +788,7 @@ export default function CuentasPorCobrarView() {
         }
     };
 
-    const generateWarehouseOrderPDF = (sale: any) => {
+    const generateWarehouseOrderPDF = async (sale: any) => {
         try {
             const doc = new jsPDF({
                 orientation: 'portrait',
@@ -1038,11 +1038,29 @@ export default function CuentasPorCobrarView() {
             doc.text("Firma y Placa Vehículo", margin + colWidth + (colWidth / 2), y, { align: 'center' });
             doc.text("Firma, Nombre y Fecha", margin + (colWidth * 2) + (colWidth / 2), y, { align: 'center' });
 
-            // Save PDF
-            doc.save(`Orden_Carga_Almacen_${sale.id}_${sale.client_name ? sale.client_name.replace(/\s+/g, '_') : 'General'}.pdf`);
-            showToast('✓ Orden de Almacén PDF descargada con diseño profesional.');
+            // Create PDF File for Sharing / Saving
+            const pdfFileName = `Orden_Carga_Almacen_${sale.id}_${sale.client_name ? sale.client_name.replace(/\s+/g, '_') : 'General'}.pdf`;
+            const pdfBlob = doc.output('blob');
+            const pdfFile = new File([pdfBlob], pdfFileName, { type: 'application/pdf' });
 
-            // INTEGRATION STEP: Trigger WhatsApp sharing automatically after PDF is ready!
+            // On mobile / modern browsers, use navigator.share to share the ACTUAL PDF directly!
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+                try {
+                    await navigator.share({
+                        files: [pdfFile],
+                        title: `Orden_Carga_Almacen_${sale.id}.pdf`,
+                        text: `Adjunto la Orden de Carga #${sale.id} para el despacho correspondiente.`
+                    });
+                    showToast('✓ Orden de Almacén compartida con éxito.');
+                    return; // Avoid downloading since it was shared directly!
+                } catch (shareErr) {
+                    console.log('User cancelled or sharing was not completed:', shareErr);
+                }
+            }
+
+            // Fallback for desktop / standard browsers: Download PDF and prompt WhatsApp details
+            doc.save(pdfFileName);
+            showToast('✓ Orden de Almacén PDF descargada con diseño profesional.');
             handleShareWarehouseWhatsApp(sale);
 
         } catch (err: any) {
