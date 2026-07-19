@@ -27,6 +27,14 @@ export default function Inventory() {
     // Filter states
     const [selectedCategory, setSelectedCategory] = useState("Todos");
     const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery);
+        }, 150);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     // Form states
     const [name, setName] = useState("");
@@ -1096,22 +1104,34 @@ export default function Inventory() {
 
     // Derive unique categories from products with memoization
     const categoriesList = React.useMemo(() => {
-        return ["Todos", ...Array.from(new Set(products.map(p => p.category || "General")))];
+        const list = ["Todos", ...Array.from(new Set(products.map(p => p.category || "General")))];
+        const hasLowStock = products.some(p => p.stock <= p.stock_alarm);
+        if (hasLowStock) {
+            list.push("⚠️ Bajo Stock");
+        }
+        return list;
     }, [products]);
 
     // Filtered list of products for main table with memoization
     const finalFilteredProducts = React.useMemo(() => {
-        const query = searchQuery.toLowerCase().trim();
+        const query = debouncedSearchQuery.toLowerCase().trim();
         const cat = selectedCategory;
         return products.filter(p => {
-            const matchesCategory = cat === "Todos" || (p.category || "General") === cat;
+            let matchesCategory = false;
+            if (cat === "Todos") {
+                matchesCategory = true;
+            } else if (cat === "⚠️ Bajo Stock") {
+                matchesCategory = p.stock <= p.stock_alarm;
+            } else {
+                matchesCategory = (p.category || "General") === cat;
+            }
             const matchesSearch = !query || 
                                   p.name.toLowerCase().includes(query) || 
                                   p.sku.toLowerCase().includes(query) ||
                                   (p.category || "").toLowerCase().includes(query);
             return matchesCategory && matchesSearch;
         });
-    }, [products, searchQuery, selectedCategory]);
+    }, [products, debouncedSearchQuery, selectedCategory]);
 
     return (
         <div 
@@ -1227,12 +1247,21 @@ export default function Inventory() {
                         className="pl-9 pr-8 py-2.5 w-full bg-slate-55 dark:bg-black/15 border border-slate-100 dark:border-slate-850 rounded-2xl focus:outline-none focus:border-blue-500 dark:text-white text-xs transition placeholder-slate-400 font-semibold"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                setDebouncedSearchQuery(searchQuery);
+                            }
+                        }}
                     />
-                    <Search className="absolute left-3.5 top-3.5 text-slate-400" size={13} />
+                    {searchQuery !== debouncedSearchQuery ? (
+                        <RefreshCw className="absolute left-3.5 top-3 text-slate-400 animate-spin" size={13} />
+                    ) : (
+                        <Search className="absolute left-3.5 top-3.5 text-slate-400" size={13} />
+                    )}
                     {searchQuery && (
                         <button 
                             type="button"
-                            onClick={() => setSearchQuery("")}
+                            onClick={() => { setSearchQuery(""); setDebouncedSearchQuery(""); }}
                             className="absolute right-3 top-3 text-[10px] text-zinc-400 hover:text-zinc-650 bg-slate-100 dark:bg-zinc-800 rounded px-1.5 py-0.5 hover:scale-95 duration-150 font-bold"
                         >
                             X

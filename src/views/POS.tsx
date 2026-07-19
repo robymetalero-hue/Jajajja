@@ -6,7 +6,7 @@ import {
     ShoppingCart, Plus, Minus, Trash2, Printer, Search, UserCheck, 
     AlertTriangle, CreditCard, DollarSign, Camera, X, ClipboardCheck,
     Coins, HelpCircle, ChevronRight, ChevronDown, ShoppingBag, Grid, List, LayoutGrid,
-    CheckCircle2, ArrowLeftRight, QrCode, History, Eye, Star, FileText, Sparkles, Download, Check, Clock, Truck, Lock
+    CheckCircle2, ArrowLeftRight, QrCode, History, Eye, Star, FileText, Sparkles, Download, Check, Clock, Truck, Lock, Loader2
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
@@ -94,6 +94,15 @@ export default function POS() {
         rawUpdateCartItemQuantity(productId, qty);
     };
     const [search, setSearch] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(search);
+        }, 150);
+        return () => clearTimeout(timer);
+    }, [search]);
+
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState("Todos");
     const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
@@ -1083,19 +1092,31 @@ export default function POS() {
     // Calculate Categorias with memoization
     const categories = React.useMemo(() => {
         const uniqueCats = Array.from(new Set(products.map(p => p.category ? p.category.trim() : "")));
-        return ["Todos", ...uniqueCats.filter(cat => cat !== "")];
+        const list = ["Todos", ...uniqueCats.filter(cat => cat !== "")];
+        const hasLowStock = products.some(p => p.stock <= p.stock_alarm);
+        if (hasLowStock) {
+            list.push("⚠️ Bajo Stock");
+        }
+        return list;
     }, [products]);
 
     // Filter Products based on search & category with memoization
     const filtered = React.useMemo(() => {
-        const query = search.toLowerCase().trim();
+        const query = debouncedSearch.toLowerCase().trim();
         const categoryFilter = selectedCategory;
         return products.filter(p => {
-            const matchesCategory = categoryFilter === "Todos" || p.category === categoryFilter;
+            let matchesCategory = false;
+            if (categoryFilter === "Todos") {
+                matchesCategory = true;
+            } else if (categoryFilter === "⚠️ Bajo Stock") {
+                matchesCategory = p.stock <= p.stock_alarm;
+            } else {
+                matchesCategory = p.category === categoryFilter;
+            }
             const matchesSearch = !query || p.name.toLowerCase().includes(query) || p.sku.toLowerCase().includes(query);
             return matchesCategory && matchesSearch;
         });
-    }, [products, search, selectedCategory]);
+    }, [products, debouncedSearch, selectedCategory]);
 
     const subtotal = React.useMemo(() => {
         return cart.reduce((acc, item) => acc + (getCartItemPriceBs(item) * item.cartQuantity), 0);
@@ -2326,15 +2347,35 @@ export default function POS() {
                         <div className="flex gap-2 w-full lg:w-96 items-center">
                             <div className="relative flex-1">
                                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 pointer-events-none">
-                                    <Search size={13} />
+                                    {search !== debouncedSearch ? (
+                                        <Loader2 size={13} className="animate-spin text-indigo-500" />
+                                    ) : (
+                                        <Search size={13} />
+                                    )}
                                 </span>
                                 <input 
                                     type="text" 
-                                    placeholder="Buscar artículo..." 
-                                    className="pl-9 pr-3 py-1.5 w-full bg-slate-50/50 dark:bg-black/10 border border-slate-200 dark:border-slate-850 rounded-xl focus:outline-none focus:border-indigo-500 dark:text-white text-[11.5px] transition placeholder-slate-400 font-semibold"
+                                    id="search-input"
+                                    placeholder="Buscar artículo o sku..." 
+                                    className="pl-9 pr-8 py-1.5 w-full bg-slate-50/50 dark:bg-black/10 border border-slate-200 dark:border-slate-850 rounded-xl focus:outline-none focus:border-indigo-500 dark:text-white text-[11.5px] transition placeholder-slate-400 font-semibold"
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            triggerVibrate(10);
+                                            setDebouncedSearch(search);
+                                        }
+                                    }}
                                 />
+                                {search && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { triggerVibrate(10); setSearch(""); setDebouncedSearch(""); }}
+                                        className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                )}
                             </div>
                             <button 
                                 type="button"
@@ -2427,11 +2468,43 @@ export default function POS() {
                     {...catalogScroll.touchHandlers}
                 >
 
+                {filtered.length === 0 && (
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex flex-col items-center justify-center py-16 px-4 bg-white/40 dark:bg-[#0c111e]/40 backdrop-blur-md rounded-3xl border border-slate-150 dark:border-slate-850 text-center max-w-md mx-auto my-8 shadow-sm"
+                    >
+                        <div className="w-14 h-14 rounded-full bg-slate-50 dark:bg-[#0c111e] flex items-center justify-center text-slate-450 dark:text-slate-500 mb-4 border border-slate-200/55 dark:border-slate-850">
+                            <Search size={22} className="animate-pulse" />
+                        </div>
+                        <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                            Sin Resultados
+                        </h3>
+                        <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-2 max-w-xs leading-relaxed font-semibold">
+                            No se encontraron artículos que coincidan con <span className="font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">"{search || selectedCategory}"</span>.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                triggerVibrate(15);
+                                setSearch("");
+                                setDebouncedSearch("");
+                                setSelectedCategory("Todos");
+                            }}
+                            className="mt-5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-colors shadow-lg shadow-indigo-500/10 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                            Restablecer Filtros
+                        </button>
+                    </motion.div>
+                )}
+
                 {/* Master product catalog grid with adaptive layout density */}
                 <motion.div 
                     layout="position"
                     className={
-                        viewLayoutMode === 'grid' 
+                        filtered.length === 0
+                            ? "hidden"
+                            : viewLayoutMode === 'grid' 
                             ? "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4" 
                             : viewLayoutMode === 'compact-grid'
                             ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2"
