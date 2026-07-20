@@ -117,7 +117,7 @@ const ALL_PERMISSION_GROUPS: PermissionGroup[] = [
 ];
 
 export default function PermissionsConsole() {
-    const { user } = useAppContext();
+    const { user, setUser } = useAppContext();
     const [workers, setWorkers] = useState<any[]>([]);
     
     // Form and UI States
@@ -326,6 +326,19 @@ export default function PermissionsConsole() {
                     await logSecurityAction(username, 'MODIFICAR_PERMISOS', changesList.join(' | '));
                 } else if (!editingUser) {
                     await logSecurityAction(username, 'CREAR_USUARIO', 'Nueva cuenta registrada en el POS');
+                }
+                
+                // If updating self, trigger an immediate refresh of the active session context
+                if (editingUser && user && Number(editingUser.id) === Number(user.id)) {
+                    try {
+                        const meRes = await fetch('/api/auth/me');
+                        if (meRes.ok) {
+                            const updatedMe = await meRes.json();
+                            setUser(updatedMe);
+                        }
+                    } catch (e) {
+                        console.error("Error automatic refreshing own session permissions:", e);
+                    }
                 }
                 
                 resetForm();

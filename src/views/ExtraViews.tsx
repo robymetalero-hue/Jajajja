@@ -162,12 +162,28 @@ export function HistorialVentasView() {
     const [selectedSale, setSelectedSale] = useState<any | null>(null);
     const [saleItems, setSaleItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [dateRange, setDateRange] = useState<DateRange>({
-        startDate: '',
-        endDate: '',
-        preset: 'all'
+    
+    // Set default date range preset to last week (7 days) for high-performance lazy loading
+    const [dateRange, setDateRange] = useState<DateRange>(() => {
+        const today = new Date();
+        const prior = new Date();
+        prior.setDate(today.getDate() - 6);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+        const priorStr = `${prior.getFullYear()}-${pad(prior.getMonth() + 1)}-${pad(prior.getDate())}`;
+        return {
+            startDate: priorStr,
+            endDate: todayStr,
+            preset: '7days'
+        };
     });
+
+    // Pagination states for lazy loading
+    const [hasMoreSales, setHasMoreSales] = useState(false);
+    const [salesOffset, setSalesOffset] = useState(0);
+    const SALES_LIMIT = 25;
 
     // Intelligent Filter State Variables
     const [searchQuery, setSearchQuery] = useState('');
@@ -176,18 +192,31 @@ export function HistorialVentasView() {
     const [minAmount, setMinAmount] = useState('');
     const [maxAmount, setMaxAmount] = useState('');
 
-    const loadSales = async () => {
-        setLoading(true);
+    const loadSales = async (append = false) => {
+        if (append) {
+            setLoadingMore(true);
+        } else {
+            setLoading(true);
+            setSalesOffset(0);
+        }
         setError(null);
         try {
-            let url = '/api/sales';
+            const currentOffset = append ? salesOffset + SALES_LIMIT : 0;
+            let url = `/api/sales?lazy=true&limit=${SALES_LIMIT}&offset=${currentOffset}`;
             if (dateRange.preset !== 'all' && dateRange.startDate && dateRange.endDate) {
-                url += `?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
+                url += `&startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
             }
+            
             const res = await fetch(url);
             if (res.ok) {
                 const data = await res.json();
-                setSales(data);
+                if (append) {
+                    setSales(prev => [...prev, ...data.sales]);
+                    setSalesOffset(currentOffset);
+                } else {
+                    setSales(data.sales);
+                }
+                setHasMoreSales(data.has_more);
             } else {
                 throw new Error("No se pudo cargar la información de ventas.");
             }
@@ -195,7 +224,12 @@ export function HistorialVentasView() {
             setError(e.message || "Fallo de conexión.");
         } finally {
             setLoading(false);
+            setLoadingMore(false);
         }
+    };
+
+    const loadMoreSales = () => {
+        loadSales(true);
     };
 
     const loadSaleDetails = async (sale: any) => {
@@ -1200,6 +1234,25 @@ export function HistorialVentasView() {
                                 )}
                             </tbody>
                         </table>
+                        
+                        {hasMoreSales && (
+                            <div className="p-4 flex justify-center border-t border-slate-100 dark:border-slate-850/60 bg-white/50 dark:bg-black/10">
+                                <button
+                                    onClick={loadMoreSales}
+                                    disabled={loadingMore}
+                                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-sans text-xs font-bold transition duration-200 shadow-md shadow-indigo-500/10 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                                >
+                                    {loadingMore ? (
+                                        <>
+                                            <span className="w-3 h-3 rounded-full border-2 border-white/35 border-t-white animate-spin" />
+                                            Cargando...
+                                        </>
+                                    ) : (
+                                        'Cargar Más Registro Histórico'
+                                    )}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 

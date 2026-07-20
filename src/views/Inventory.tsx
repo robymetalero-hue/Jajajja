@@ -10,7 +10,11 @@ import { useElasticScroll } from '../utils/touchScroll';
 import PhysicalCountManager from '../components/PhysicalCountManager';
 
 export default function Inventory() {
-    const { products, fetchProducts, user, exchangeRate, roundBs, departments, fetchDepartments, view } = useAppContext();
+    const { 
+        products, fetchProducts, user, exchangeRate, roundBs, departments, fetchDepartments, view,
+        hasMoreProducts, loadMoreProducts
+    } = useAppContext();
+    const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
     const elasticScroll = useElasticScroll(true);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -2322,6 +2326,29 @@ export default function Inventory() {
                         </tbody>
                     </table>
                 </div>
+
+                {hasMoreProducts && (
+                    <div className="mt-6 flex justify-center pb-6">
+                        <button
+                            onClick={async () => {
+                                setLoadingMoreProducts(true);
+                                await loadMoreProducts();
+                                setLoadingMoreProducts(false);
+                            }}
+                            disabled={loadingMoreProducts}
+                            className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-sans text-xs font-extrabold transition duration-200 shadow-lg shadow-indigo-600/15 disabled:opacity-50 flex items-center gap-2 cursor-pointer border border-indigo-600/20"
+                        >
+                            {loadingMoreProducts ? (
+                                <>
+                                    <span className="w-3.5 h-3.5 rounded-full border-2 border-white/35 border-t-white animate-spin" />
+                                    Cargando más productos...
+                                </>
+                            ) : (
+                                'Cargar Más Productos'
+                            )}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Product Image Lightbox Full-view HUD */}

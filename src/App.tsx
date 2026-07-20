@@ -5,20 +5,6 @@ import { AppProvider, useAppContext } from './context/AppContext';
 import { hasPermission } from './utils/permissions';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { startAutoBackupScheduler } from "./utils/driveBackupScheduler";
-import POS from './views/POS';
-import LoginScreen from './views/LoginScreen';
-import Dashboard from './views/Dashboard';
-import Inventory from './views/Inventory';
-import PermissionsConsole from './views/PermissionsConsole';
-import ConfiguracionesView from './views/ConfiguracionesView';
-import CajasView from './views/CajasView';
-import CuentasPorCobrarView from './views/CuentasPorCobrarView';
-import DiagnosticoView from './views/DiagnosticoView';
-import AuditoriaView from './views/AuditoriaView';
-import { 
-    InicioView, HistorialVentasView, VentasPendientesView, 
-    DepartamentosView, DevolucionesView, AnalisisView 
-} from './views/ExtraViews';
 import PhysicalCountManager from './components/PhysicalCountManager';
 import AudioVoice from './components/AudioVoice';
 import { 
@@ -26,6 +12,42 @@ import {
     Folder, ClipboardCheck, Undo2, LayoutDashboard, TrendingUp, 
     Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History, Loader2, Store
 } from 'lucide-react';
+
+// Code Splitting with React.lazy
+const POS = React.lazy(() => import('./views/POS'));
+const LoginScreen = React.lazy(() => import('./views/LoginScreen'));
+const Dashboard = React.lazy(() => import('./views/Dashboard'));
+const Inventory = React.lazy(() => import('./views/Inventory'));
+const PermissionsConsole = React.lazy(() => import('./views/PermissionsConsole'));
+const ConfiguracionesView = React.lazy(() => import('./views/ConfiguracionesView'));
+const CajasView = React.lazy(() => import('./views/CajasView'));
+const CuentasPorCobrarView = React.lazy(() => import('./views/CuentasPorCobrarView'));
+const DiagnosticoView = React.lazy(() => import('./views/DiagnosticoView'));
+const AuditoriaView = React.lazy(() => import('./views/AuditoriaView'));
+
+// Named exports from ExtraViews loaded dynamically
+const InicioView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.InicioView })));
+const HistorialVentasView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.HistorialVentasView })));
+const VentasPendientesView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.VentasPendientesView })));
+const DepartamentosView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.DepartamentosView })));
+const DevolucionesView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.DevolucionesView })));
+const AnalisisView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.AnalisisView })));
+
+// Elegant and professional loader fallback for dynamic components
+const LoadingViewFallback = () => (
+    <div className="flex flex-col items-center justify-center w-full h-full min-h-[350px] p-8 text-center bg-slate-50/30 dark:bg-black/5 backdrop-blur-sm rounded-3xl animate-fadeIn">
+        <div className="relative flex items-center justify-center mb-4">
+            <div className="w-12 h-12 border-4 border-indigo-500/10 border-t-indigo-600 dark:border-indigo-400/10 dark:border-t-indigo-400 rounded-full animate-spin"></div>
+            <Sparkles className="absolute text-indigo-500 dark:text-indigo-400 animate-pulse" size={16} />
+        </div>
+        <h3 className="font-sans font-black text-xs text-slate-700 dark:text-slate-300 uppercase tracking-widest">
+            Cargando Módulo
+        </h3>
+        <p className="font-mono text-[9px] text-slate-400 mt-1 uppercase tracking-wider">
+            Preparando interfaz...
+        </p>
+    </div>
+);
 
 // Animated nav bar dynamic icons with custom physical micro-movements
 interface AnimatedMenuIconProps {
@@ -223,7 +245,7 @@ function AppLayout() {
     const { 
         darkMode, setDarkMode, user, setUser, view, setView, isOffline, isSyncing, triggerOnlineSync,
         isAutonomousTesting, setIsAutonomousTesting, autonomousStep, setAutonomousStep, autonomousLogs, setAutonomousLogs,
-        products, pwaPrompt, installPWA, isPwaInstalled, isInitializing, kioskMode, theme, setTheme
+        products, pwaPrompt, installPWA, isPwaInstalled, isInitializing, kioskMode, theme, setTheme, syncError
     } = useAppContext();
     
     const isRgb = theme === 'rgb';
@@ -409,7 +431,11 @@ function AppLayout() {
     }, [view, user]);
 
     if (!user || (user.role as string) === 'none' || user.username === 'none') {
-        return <LoginScreen />;
+        return (
+            <React.Suspense fallback={<LoadingViewFallback />}>
+                <LoginScreen />
+            </React.Suspense>
+        );
     }
 
     // Helper to render nav items with identical styles
@@ -988,6 +1014,29 @@ function AppLayout() {
             {/* Main body wrapper */}
             <div className="flex-grow flex flex-col h-full overflow-hidden relative">
                 
+                {/* Firebase Quota Warning Banner */}
+                {syncError && (syncError.toLowerCase().includes('quota') || syncError.toLowerCase().includes('resource_exhausted')) && (
+                    <div className="bg-amber-500/10 dark:bg-amber-500/5 border-b border-amber-500/20 dark:border-amber-500/10 px-4 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-450 z-50">
+                        <div className="flex items-center gap-2.5 font-semibold">
+                            <span className="flex h-2 w-2 relative shrink-0">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                            </span>
+                            <span>
+                                <strong>Límite de Escritura Firestore Excedido (Spark Plan):</strong> La cuota gratuita de escritura diaria se ha agotado. GTR POS seguirá funcionando normalmente guardando datos de forma local en SQLite e IndexedDB, y se sincronizará automáticamente mañana cuando la cuota se restablezca.
+                            </span>
+                        </div>
+                        <a 
+                            href="https://console.firebase.google.com/project/gen-lang-client-0566278135/firestore/databases/ai-studio-remixgtrposaisma-814bb0d3-8e73-41a4-8913-4a6a5d07dc2f/data?openUpgradeDialog=true"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-amber-500/25 hover:bg-amber-500/35 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 text-amber-900 dark:text-amber-300 transition-colors px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider shrink-0"
+                        >
+                            Ver Consola & Actualizar Plan
+                        </a>
+                    </div>
+                )}
+                
                 {/* Real-time Firestore Sync Fine Progress Bar */}
                 {isSyncing && (
                     <div className="absolute top-14 lg:top-0 left-0 right-0 h-0.5 bg-indigo-100 dark:bg-indigo-950/20 overflow-hidden z-50">
@@ -1034,6 +1083,14 @@ function AppLayout() {
                             <span className="text-[8px] font-extrabold text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded-md uppercase tracking-wider font-mono animate-pulse">
                                 Sincronizando...
                             </span>
+                        ) : syncError ? (
+                            <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wider font-mono ${
+                                syncError.toLowerCase().includes('quota') || syncError.toLowerCase().includes('resource_exhausted')
+                                    ? 'text-rose-500 bg-rose-500/10 border border-rose-500/20'
+                                    : 'text-rose-400 bg-rose-400/10 border border-rose-400/15'
+                            }`} title={syncError}>
+                                {syncError.toLowerCase().includes('quota') || syncError.toLowerCase().includes('resource_exhausted') ? 'Cuota Lim.' : 'Sync Err'}
+                            </span>
                         ) : (
                             <span className="text-[8px] font-extrabold text-[#2563eb] bg-[#2563eb]/10 px-1.5 py-0.5 rounded-md uppercase tracking-wider font-mono">
                                 Online
@@ -1073,22 +1130,24 @@ function AppLayout() {
                             transition={{ duration: 0.3, ease: "easeOut" }}
                             className="h-full w-full overflow-hidden"
                         >
-                            {view === 'inicio' && <InicioView />}
-                            {view === 'pos' && <POS />}
-                            {view === 'ventas_pendientes' && hasPermission(user, 'manage_credits') && <CuentasPorCobrarView />}
-                            {view === 'historial_ventas' && hasPermission(user, 'view_sales') && <HistorialVentasView />}
-                            {view === 'cuentas_por_cobrar' && hasPermission(user, 'manage_credits') && <CuentasPorCobrarView />}
-                            {(view === 'productos' || view === 'inventario') && hasPermission(user, 'view_inventory') && <Inventory />}
-                            {view === 'auditoria' && hasPermission(user, 'view_audit') && <AuditoriaView />}
-                            {view === 'departamentos' && hasPermission(user, 'view_inventory') && <DepartamentosView />}
-                            {view === 'devoluciones' && hasPermission(user, 'view_inventory') && <DevolucionesView />}
-                            {view === 'reportes' && hasPermission(user, 'view_reports') && <Dashboard />}
-                            {view === 'analisis' && hasPermission(user, 'view_reports') && <AnalisisView />}
-                            {view === 'usuarios' && user?.role === 'admin' && <PermissionsConsole />}
-                            {view === 'cajas' && hasPermission(user, 'manage_caja') && <CajasView />}
-                            {view === 'conteo_fisico' && <PhysicalCountManager onClose={() => setView('pos')} />}
-                            {view === 'configuraciones' && <ConfiguracionesView />}
-                            {view === 'diagnostico' && <DiagnosticoView />}
+                            <React.Suspense fallback={<LoadingViewFallback />}>
+                                {view === 'inicio' && <InicioView />}
+                                {view === 'pos' && <POS />}
+                                {view === 'ventas_pendientes' && hasPermission(user, 'manage_credits') && <CuentasPorCobrarView />}
+                                {view === 'historial_ventas' && hasPermission(user, 'view_sales') && <HistorialVentasView />}
+                                {view === 'cuentas_por_cobrar' && hasPermission(user, 'manage_credits') && <CuentasPorCobrarView />}
+                                {(view === 'productos' || view === 'inventario') && hasPermission(user, 'view_inventory') && <Inventory />}
+                                {view === 'auditoria' && hasPermission(user, 'view_audit') && <AuditoriaView />}
+                                {view === 'departamentos' && hasPermission(user, 'view_inventory') && <DepartamentosView />}
+                                {view === 'devoluciones' && hasPermission(user, 'view_inventory') && <DevolucionesView />}
+                                {view === 'reportes' && hasPermission(user, 'view_reports') && <Dashboard />}
+                                {view === 'analisis' && hasPermission(user, 'view_reports') && <AnalisisView />}
+                                {view === 'usuarios' && user?.role === 'admin' && <PermissionsConsole />}
+                                {view === 'cajas' && hasPermission(user, 'manage_caja') && <CajasView />}
+                                {view === 'conteo_fisico' && <PhysicalCountManager onClose={() => setView('pos')} />}
+                                {view === 'configuraciones' && <ConfiguracionesView />}
+                                {view === 'diagnostico' && <DiagnosticoView />}
+                            </React.Suspense>
                         </motion.div>
                     </AnimatePresence>
                 </main>

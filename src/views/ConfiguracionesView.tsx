@@ -4,6 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { Settings, TrendingUp, History, ShieldAlert, Lock, Save, Cloud, Database, Download, Upload, FileJson, RefreshCw, DollarSign, Info, ShieldCheck, Receipt, Eye, Sliders, Type, RotateCcw, Printer, Users, Star, Trash2, Search, CloudUpload, CloudDownload, Activity, Smartphone, Sparkles } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import RgbCustomizerPanel from '../components/RgbCustomizerPanel';
+import { saveOfflineAction } from '../utils/offlineStorage';
 
 interface AuditLog {
     id: number;
@@ -603,6 +604,13 @@ export default function ConfiguracionesView() {
     const handleUpdateClientPoints = async (clientId: number, points: number) => {
         setIsUpdatingPoints(true);
         try {
+            if (!navigator.onLine) {
+                await saveOfflineAction('adjust_points', `/api/clients/${clientId}/points`, 'POST', { points });
+                showNotification?.("✓ Acción registrada offline. Los puntos se actualizarán al recuperar conexión a internet.", "success");
+                setEditingClientPointsId(null);
+                return;
+            }
+
             const res = await fetch(`/api/clients/${clientId}/points`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

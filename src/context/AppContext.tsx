@@ -5,7 +5,7 @@ import { normalizePermissions } from '../utils/permissions';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, onSnapshot, getDocFromServer, setLogLevel } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { getOfflineSales, deleteOfflineSale } from '../utils/offlineStorage';
+import { getOfflineSales, deleteOfflineSale, getOfflineActions, deleteOfflineAction, saveOfflineAction, hasOfflineActions, hasOfflineSales } from '../utils/offlineStorage';
 
 // Initialize Client-Side Firebase SDK
 const app = initializeApp(firebaseConfig);
@@ -97,6 +97,9 @@ interface AppContextType {
     clients: Client[];
     fetchProducts: () => Promise<void>;
     fetchClients: () => Promise<void>;
+    hasMoreProducts: boolean;
+    totalProducts: number;
+    loadMoreProducts: () => Promise<void>;
     view: ViewType;
     setView: (v: ViewType) => void;
     exchangeRate: number;
@@ -129,6 +132,8 @@ interface AppContextType {
     setRgbSettings: React.Dispatch<React.SetStateAction<RgbThemeSettings>>;
     isSyncing: boolean;
     triggerOnlineSync: () => Promise<void>;
+    syncError: string | null;
+    setSyncError: React.Dispatch<React.SetStateAction<string | null>>;
     
     // S.I.T.A. Autonomous QA Testing Systems
     isAutonomousTesting: boolean;
@@ -155,6 +160,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [kioskMode, setKioskMode] = useState(() => localStorage.getItem('kioskMode') === 'true');
     const [isOffline, setIsOffline] = useState(() => !window.navigator.onLine);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [syncError, setSyncError] = useState<string | null>(null);
 
     // PWA states
     const [pwaPrompt, setPwaPrompt] = useState<any>(null);
@@ -279,6 +285,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             console.error("Failed to save local user session state:", err);
         }
     };
+
+    // Real-time synchronization of user permissions & role with the server database state
+    useEffect(() => {
+        if (!user) return;
+
+        const syncUserSession = async () => {
+            try {
+                const res = await fetch('/api/auth/me');
+                if (res.ok) {
+                    const freshUser = await res.json();
+                    
+                    const localPerms = JSON.stringify(normalizePermissions(user.permissions));
+                    const remotePerms = JSON.stringify(normalizePermissions(freshUser.permissions));
+                    
+                    if (
+                        user.role !== freshUser.role || 
+                        user.username !== freshUser.username || 
+                        user.email !== freshUser.email || 
+                        localPerms !== remotePerms
+                    ) {
+                        console.log("[Sync] User role/permissions updated on server, synchronizing session...", freshUser);
+                        setUser(freshUser);
+                    }
+                } else if (res.status === 401) {
+                    // Invalid token or session revoked on server
+                    setUser(null);
+                }
+            } catch (err) {
+                console.warn("[Sync] Background session sync failed:", err);
+            }
+        };
+
+        // Run immediately on mount or user change
+        syncUserSession();
+
+        // Check for updates every 10 seconds for ultra-responsive updates
+        const intervalId = setInterval(syncUserSession, 10000);
+        return () => clearInterval(intervalId);
+    }, [user?.id]);
 
     const [darkMode, setDarkMode] = useState(() => {
         return localStorage.getItem('darkMode') === 'true';
@@ -411,6 +456,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return [];
         }
     });
+    const [hasMoreProducts, setHasMoreProducts] = useState(false);
+    const [totalProducts, setTotalProducts] = useState(0);
+    const [productsOffset, setProductsOffset] = useState(0);
+    const PRODUCTS_LIMIT = 50;
     const [clients, setClients] = useState<Client[]>(() => {
         try {
             const cached = localStorage.getItem('cached_clients');
@@ -738,17 +787,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const fetchProducts = async () => {
         try {
-            const res = await fetchWithRetry('/api/products');
+            setProductsOffset(0);
+            const res = await fetchWithRetry(`/api/products?lazy=true&limit=${PRODUCTS_LIMIT}&offset=0`);
             const data = await res.json();
-            setProducts(data);
-            localStorage.setItem('cached_products', JSON.stringify(data));
+            
+            // Check if response has pagination wrapper
+            if (data && Array.isArray(data.products)) {
+                setProducts(data.products);
+                setTotalProducts(data.total);
+                setHasMoreProducts(data.has_more);
+                localStorage.setItem('cached_products', JSON.stringify(data.products));
+            } else {
+                const arr = Array.isArray(data) ? data : [];
+                setProducts(arr);
+                setTotalProducts(arr.length);
+                setHasMoreProducts(false);
+                localStorage.setItem('cached_products', JSON.stringify(arr));
+            }
             setIsOffline(false);
         } catch (e) {
             console.warn("Failed to fetch products, using cached value:", e);
             const cached = localStorage.getItem('cached_products');
             if (cached) {
                 try {
-                    setProducts(JSON.parse(cached));
+                    const parsed = JSON.parse(cached);
+                    setProducts(parsed);
+                    setTotalProducts(parsed.length);
+                    setHasMoreProducts(false);
                 } catch (parseErr) {
                     console.error("Failed to parse cached products:", parseErr);
                 }
@@ -756,6 +821,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (e instanceof Error && (e.message.includes('Failed to fetch') || e.message.includes('fetch'))) {
                 setIsOffline(true);
             }
+        }
+    };
+
+    const loadMoreProducts = async () => {
+        try {
+            const nextOffset = productsOffset + PRODUCTS_LIMIT;
+            const res = await fetchWithRetry(`/api/products?lazy=true&limit=${PRODUCTS_LIMIT}&offset=${nextOffset}`);
+            const data = await res.json();
+            
+            if (data && Array.isArray(data.products)) {
+                setProducts(prev => {
+                    const merged = [...prev, ...data.products];
+                    // Save merged set in cache to prevent offline gaps
+                    localStorage.setItem('cached_products', JSON.stringify(merged));
+                    return merged;
+                });
+                setProductsOffset(nextOffset);
+                setTotalProducts(data.total);
+                setHasMoreProducts(data.has_more);
+            }
+            setIsOffline(false);
+        } catch (e) {
+            console.error("Failed to load more products:", e);
         }
     };
 
@@ -862,7 +950,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }));
     };
 
-    const syncOfflineSales = async () => {
+    const syncOfflineActions = async (tempIdMapping: { [key: string]: any } = {}) => {
+        try {
+            const offlineActions = await getOfflineActions();
+            if (offlineActions.length === 0) return;
+
+            console.log(`[Offline Sync] Found ${offlineActions.length} general offline actions to synchronize.`);
+            let successCount = 0;
+
+            // Sort actions by creation time to ensure they run in correct chronological order
+            const sortedActions = [...offlineActions].sort((a, b) => 
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+
+            for (const action of sortedActions) {
+                try {
+                    // Replace temp IDs inside payload if needed
+                    let payloadStr = JSON.stringify(action.payload);
+                    Object.keys(tempIdMapping).forEach(tempId => {
+                        payloadStr = payloadStr.replaceAll(tempId, String(tempIdMapping[tempId]));
+                    });
+                    const processedPayload = JSON.parse(payloadStr);
+
+                    // Execute fetch call
+                    const res = await fetch(action.url, {
+                        method: action.method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(processedPayload)
+                    });
+
+                    if (res.ok) {
+                        const responseData = await res.json().catch(() => ({}));
+                        
+                        // If this was a client creation action, map the temp ID to the newly created DB ID
+                        if (action.type === 'create_client' && action.metadata?.tempId && responseData.id) {
+                            tempIdMapping[action.metadata.tempId] = responseData.id;
+                            console.log(`[Offline Sync] Mapped temp ID ${action.metadata.tempId} to actual ID ${responseData.id}`);
+                        }
+
+                        await deleteOfflineAction(action.id);
+                        successCount++;
+                    } else {
+                        const errText = await res.text();
+                        console.error(`[Offline Sync] Server rejected action ${action.id}:`, errText);
+                        // Delete if it's a structural client-side error (4xx) so we don't block the queue
+                        if (res.status >= 400 && res.status < 500) {
+                            await deleteOfflineAction(action.id);
+                        }
+                    }
+                } catch (actionErr) {
+                    console.error(`[Offline Sync] Network failed during sync of action ${action.id}:`, actionErr);
+                    break; // Stop execution on connection loss
+                }
+            }
+
+            if (successCount > 0) {
+                safeDispatchEvent('triggerNotification', {
+                    detail: {
+                        message: `✓ Sincronización automática: Se procesaron ${successCount} acción(es) offline con éxito.`,
+                        type: 'success'
+                    }
+                });
+                await fetchProducts();
+                await fetchClients();
+                await fetchDepartments();
+            }
+        } catch (err) {
+            console.error('[Offline Sync] Failed to process general offline actions queue:', err);
+        }
+    };
+
+    const syncOfflineSales = async (tempIdMapping: { [key: string]: any } = {}) => {
         try {
             const offlineSales = await getOfflineSales();
             if (offlineSales.length === 0) return;
@@ -873,6 +1031,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             for (const sale of offlineSales) {
                 try {
                     let clientId = sale.salePayload.client_id;
+
+                    // If clientId is a temp ID, map it to the actual ID
+                    if (clientId && typeof clientId === 'string' && tempIdMapping[clientId]) {
+                        clientId = tempIdMapping[clientId];
+                        sale.salePayload.client_id = clientId;
+                    }
 
                     // 1. If we have a client name but no client_id, let's try to register/find the client first
                     if (sale.clientName && sale.clientName.trim() && !clientId) {
@@ -933,8 +1097,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (navigator.onLine === false) return;
         setIsSyncing(true);
         try {
-            // First synchronize offline sales in IndexedDB
-            await syncOfflineSales();
+            const tempIdMapping: { [key: string]: any } = {};
+            // First synchronize general actions, then sales with shared mapping
+            await syncOfflineActions(tempIdMapping);
+            await syncOfflineSales(tempIdMapping);
 
             console.log("[PWA Sync] Syncing with Google Cloud Firestore in real-time...");
             const res = await fetch('/api/sync/trigger', { method: 'POST' });
@@ -946,9 +1112,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 await fetchClients();
                 await fetchExchangeRate();
                 await fetchDepartments();
+                setSyncError(null);
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                const errMsg = errData.error || `HTTP ${res.status}`;
+                console.warn("[PWA Sync] Sync completed with server-side error:", errMsg);
+                setSyncError(errMsg);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.warn("[PWA Sync] Error triggering backend online synchronization:", error);
+            setSyncError(error?.message || String(error));
         } finally {
             // Keep the spinner visible/smooth for a short period of satisfaction
             setTimeout(() => {
@@ -1049,6 +1222,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             clients,
             fetchProducts,
             fetchClients,
+            hasMoreProducts,
+            totalProducts,
+            loadMoreProducts,
             view,
             setView,
             exchangeRate,
@@ -1081,6 +1257,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setRgbSettings,
             isSyncing,
             triggerOnlineSync,
+            syncError,
+            setSyncError,
             isAutonomousTesting,
             setIsAutonomousTesting,
             autonomousStep,

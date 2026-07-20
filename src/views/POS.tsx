@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
-import { saveOfflineSale } from '../utils/offlineStorage';
+import { saveOfflineSale, saveOfflineAction } from '../utils/offlineStorage';
 import { useElasticScroll } from '../utils/touchScroll';
 import { safeDispatchEvent } from '../utils/events';
 
@@ -43,9 +43,11 @@ export default function POS() {
         tabs, setTabs, activeTabId, setActiveTabId,
         clientName, setClientName, clientPhone, setClientPhone,
         discount, setDiscount, discountType, setDiscountType,
-        paymentMethod, setPaymentMethod, departments, fetchDepartments
+        paymentMethod, setPaymentMethod, departments, fetchDepartments,
+        hasMoreProducts, loadMoreProducts
     } = useAppContext();
 
+    const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
     const executeCheckoutRef = useRef<any>(null);
     const isKioskLocked = (kioskMode || (user && user.role === 'vendedor')) && user?.role !== 'admin' && user?.role !== 'propietario';
 
@@ -638,6 +640,27 @@ export default function POS() {
                 price: item.selectedPrice || item.price_unit
             }));
             
+            if (!navigator.onLine) {
+                const payload = {
+                    client_name: pendingClientName.trim(),
+                    destination: pendingDestination.trim(),
+                    client_phone: pendingClientPhone.trim() || null,
+                    transport_company: pendingTransportCompany.trim() || null,
+                    total: subtotal,
+                    discount: 0,
+                    items
+                };
+                await saveOfflineAction('create_pending_sale', '/api/pending-sales', 'POST', payload);
+                clearCart();
+                setPendingClientName("");
+                setPendingDestination("");
+                setPendingClientPhone("");
+                setPendingTransportCompany("");
+                setIsPendingSaleModalOpen(false);
+                showNotification("📦 Pedido registrado offline. Se sincronizará automáticamente al recuperar internet.", "success");
+                return;
+            }
+
             const res = await fetch('/api/pending-sales', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1166,20 +1189,37 @@ export default function POS() {
 
         try {
             // Register client details if provided. By hitting POST /api/clients first, we retrieve/create clientId
-            let clientId: number | null = null;
-            if (clientName.trim() && navigator.onLine) {
-                try {
-                    const clientRes = await fetch('/api/clients', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: clientName, phone: clientPhone })
-                    });
-                    if (clientRes.ok) {
-                        const clientData = await clientRes.json();
-                        clientId = clientData.id;
+            let clientId: any = null;
+            if (clientName.trim()) {
+                if (navigator.onLine) {
+                    try {
+                        const clientRes = await fetch('/api/clients', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: clientName, phone: clientPhone })
+                        });
+                        if (clientRes.ok) {
+                            const clientData = await clientRes.json();
+                            clientId = clientData.id;
+                        }
+                    } catch (e) {
+                        console.error("Client registration error:", e);
                     }
-                } catch (e) {
-                    console.error("Client registration error:", e);
+                } else {
+                    // Generate a unique temporary client ID
+                    const tempId = `client_temp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                    clientId = tempId;
+
+                    // Save client creation as an offline action
+                    await saveOfflineAction(
+                        'create_client',
+                        '/api/clients',
+                        'POST',
+                        { name: clientName, phone: clientPhone },
+                        { tempId }
+                    );
+
+                    console.log(`[POS Offline] Saved offline client action with temp ID: ${tempId}`);
                 }
             }
 
@@ -2842,6 +2882,29 @@ export default function POS() {
                         })}
                     </AnimatePresence>
                 </motion.div>
+
+                {hasMoreProducts && (
+                    <div className="mt-8 flex justify-center pb-8">
+                        <button
+                            onClick={async () => {
+                                setLoadingMoreProducts(true);
+                                await loadMoreProducts();
+                                setLoadingMoreProducts(false);
+                            }}
+                            disabled={loadingMoreProducts}
+                            className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-sans text-xs font-extrabold transition duration-200 shadow-lg shadow-indigo-600/15 disabled:opacity-50 flex items-center gap-2 cursor-pointer border border-indigo-600/20"
+                        >
+                            {loadingMoreProducts ? (
+                                <>
+                                    <span className="w-3.5 h-3.5 rounded-full border-2 border-white/35 border-t-white animate-spin" />
+                                    Cargando más productos...
+                                </>
+                            ) : (
+                                'Cargar Más Catálogo de Productos'
+                            )}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
 

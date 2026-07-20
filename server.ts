@@ -148,7 +148,22 @@ async function startServer() {
       const token = authHeader.split(' ')[1];
       try {
         verifiedUser = jwt.verify(token, JWT_SECRET);
-      } catch (e) {
+        
+        // Dynamic Sync: Fetch latest permissions and role from the database to reflect changes instantly
+        if (verifiedUser && verifiedUser.id) {
+          try {
+            const freshUser = db.prepare('SELECT id, username, role, permissions, email FROM users WHERE id = ?').get(verifiedUser.id) as any;
+            if (freshUser) {
+              verifiedUser.username = freshUser.username;
+              verifiedUser.role = freshUser.role;
+              verifiedUser.permissions = JSON.parse(freshUser.permissions || "{}");
+              verifiedUser.email = freshUser.email;
+            }
+          } catch (dbErr: any) {
+            console.warn("[Middleware Error] Failed to fetch fresh user details from database:", dbErr.message);
+          }
+        }
+      } catch (e: any) {
         authError = e.message;
       }
     }
@@ -452,6 +467,24 @@ async function startServer() {
         });
 
         res.status(401).json({ error: "Credenciales inválidas" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/auth/me", (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'];
+      if (!userId) {
+        return res.status(401).json({ error: "No autorizado" });
+      }
+      const user = db.prepare('SELECT id, username, role, permissions, email FROM users WHERE id = ?').get(userId) as any;
+      if (user) {
+        const permissions = JSON.parse(user.permissions || "{}");
+        res.json({ id: user.id, username: user.username, role: user.role, permissions, email: user.email });
+      } else {
+        res.status(404).json({ error: "Usuario no encontrado" });
       }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1539,17 +1572,73 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         }
       } catch (err) {}
 
-      let products = db.prepare('SELECT * FROM products').all() as any[];
+      const limit = req.query.limit ? Number(req.query.limit) : null;
+      const offset = req.query.offset ? Number(req.query.offset) : 0;
+      const search = req.query.search ? String(req.query.search).trim() : null;
 
-      // Strip sensitive cost field if requester is vendedor and doesn't have cost permission
-      if (userRole === 'vendedor' && !permissions.view_costs && !permissions.view_purchase_prices) {
-        products = products.map(p => {
-          const { price_cost, ...rest } = p;
-          return { ...rest, price_cost: null };
-        });
+      let countQuery = `SELECT COUNT(*) as count FROM products`;
+      let queryStr = `SELECT * FROM products`;
+      let conditions: string[] = [];
+      let params: any[] = [];
+
+      if (search) {
+        conditions.push(` (name LIKE ? OR sku LIKE ? OR category LIKE ?) `);
+        const wild = `%${search}%`;
+        params.push(wild, wild, wild);
       }
 
-      res.json(products);
+      if (conditions.length > 0) {
+        const condStr = ` WHERE ` + conditions.join(' AND ');
+        queryStr += condStr;
+        countQuery += condStr;
+      }
+
+      queryStr += ` ORDER BY id DESC `;
+
+      if (limit !== null) {
+        const countParams = [...params];
+        queryStr += ` LIMIT ? OFFSET ? `;
+        params.push(limit, offset);
+
+        const totalCountRow = db.prepare(countQuery).get(...countParams) as any;
+        const totalCount = totalCountRow ? totalCountRow.count : 0;
+
+        let products = db.prepare(queryStr).all(...params) as any[];
+
+        // Strip sensitive cost field if requester is vendedor and doesn't have cost permission
+        if (userRole === 'vendedor' && !permissions.view_costs && !permissions.view_purchase_prices) {
+          products = products.map(p => {
+            const { price_cost, ...rest } = p;
+            return { ...rest, price_cost: null };
+          });
+        }
+
+        res.json({
+          products,
+          total: totalCount,
+          has_more: offset + products.length < totalCount
+        });
+      } else {
+        let products = db.prepare(queryStr).all(...params) as any[];
+
+        // Strip sensitive cost field if requester is vendedor and doesn't have cost permission
+        if (userRole === 'vendedor' && !permissions.view_costs && !permissions.view_purchase_prices) {
+          products = products.map(p => {
+            const { price_cost, ...rest } = p;
+            return { ...rest, price_cost: null };
+          });
+        }
+
+        if (req.query.lazy === 'true') {
+          res.json({
+            products,
+            total: products.length,
+            has_more: false
+          });
+        } else {
+          res.json(products);
+        }
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -2750,7 +2839,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   // REST API: Sales Operation
   app.get("/api/sales", (req, res) => {
     try {
-      const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+      const { startDate, endDate, limit, offset, lazy } = req.query as { startDate?: string; endDate?: string; limit?: string; offset?: string; lazy?: string };
       const userRole = req.headers['x-user-role'];
       const userId = req.headers['x-user-id'];
       
@@ -2778,6 +2867,11 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         capitalSelect = `(SELECT COALESCE(SUM(si.quantity * (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate)), 0) FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = s.id) as capital`;
       }
 
+      let countQuery = `
+        SELECT COUNT(*) as count
+        FROM sales s
+      `;
+
       let query = `
         SELECT s.*, c.name as client_name, u.username as user_name,
                (SELECT COALESCE(SUM(quantity), 0) FROM sale_items WHERE sale_id = s.id) as item_count,
@@ -2801,13 +2895,48 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       }
       
       if (conditions.length > 0) {
-        query += ` WHERE ` + conditions.join(' AND ');
+        const condStr = ` WHERE ` + conditions.join(' AND ');
+        query += condStr;
+        countQuery += condStr;
       }
       
       query += ` ORDER BY s.created_at DESC `;
       
-      const sales = db.prepare(query).all(...params);
-      res.json(sales);
+      const limitVal = limit ? Number(limit) : null;
+      const offsetVal = offset ? Number(offset) : 0;
+
+      if (limitVal !== null) {
+        const countParams = [...params];
+        query += ` LIMIT ? OFFSET ? `;
+        params.push(limitVal, offsetVal);
+
+        const totalCountRow = db.prepare(countQuery).get(...countParams) as any;
+        const totalCount = totalCountRow ? totalCountRow.count : 0;
+
+        const sales = db.prepare(query).all(...params);
+
+        if (lazy === 'true') {
+          res.json({
+            sales,
+            total: totalCount,
+            has_more: offsetVal + sales.length < totalCount
+          });
+        } else {
+          res.json(sales);
+        }
+      } else {
+        const sales = db.prepare(query).all(...params);
+
+        if (lazy === 'true') {
+          res.json({
+            sales,
+            total: sales.length,
+            has_more: false
+          });
+        } else {
+          res.json(sales);
+        }
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

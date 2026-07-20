@@ -8,7 +8,8 @@ import {
   getDocs, 
   writeBatch, 
   query, 
-  limit 
+  limit,
+  orderBy
 } from 'firebase/firestore';
 import { db } from './database.ts';
 import fs from 'fs';
@@ -88,6 +89,30 @@ let isPullingInProgress = false;
 let lastPullTimestamp = 0;
 const PULL_COOLDOWN_MS = 10000; // 10 seconds rate limit for background pulls
 
+// List of tables that are append-only to avoid full collection scans & rewrites on sync
+export const APPEND_ONLY_TABLES = [
+  'sales',
+  'sale_items',
+  'shifts',
+  'exchange_rate_audit',
+  'caja_cierres',
+  'stock_arrivals',
+  'pending_sales',
+  'pending_sale_items',
+  'accounts_receivable',
+  'credit_payments',
+  'pending_sale_payments',
+  'cash_movements',
+  'cash_settlements',
+  'inventory_audit_logs',
+  'system_audit_logs',
+  'inventory_counts',
+  'inventory_count_items'
+];
+
+// In-memory cache of last successfully synchronized maximum IDs per table to prevent redundant Firestore operations
+export const lastSyncedMaxIdCache: Record<string, number> = {};
+
 /**
  * Pushes a local SQLite table's content to Firestore.
  * Supports targeted synchronization for specific rows to optimize speed and network payload.
@@ -113,7 +138,103 @@ export async function pushLocalToFirestore(tableName: string, idOrIds?: any | an
         rows = db.prepare(`SELECT * FROM ${tableName} WHERE id IN (${placeholders})`).all(...idList) as any[];
       }
     } else {
-      // Full table sync
+      // Full table sync requested.
+      // Optimización crítica para tablas append-only: evitar lecturas de Firestore enteras y escrituras redundantes.
+      if (APPEND_ONLY_TABLES.includes(tableName)) {
+        // 1. Obtener ID máximo local en SQLite
+        let localMaxId = 0;
+        try {
+          const maxRow = db.prepare(`SELECT MAX(id) as maxId FROM ${tableName}`).get() as any;
+          localMaxId = Number(maxRow?.maxId || 0);
+        } catch (sqliteErr: any) {
+          console.warn(`[Sync] Could not read local max ID for append-only table "${tableName}":`, sqliteErr.message);
+        }
+
+        // 2. Si localMaxId es 0, no hay datos locales, no hace falta hacer nada
+        if (localMaxId === 0) {
+          console.log(`[Sync] Table "${tableName}" is empty locally. Skipping sync.`);
+          return;
+        }
+
+        // 3. Consultar cache local en memoria. Si ya está sincronizado hasta el ID local máximo, omitir completamente (ahorra 100% de operaciones de Firestore).
+        const cachedMax = lastSyncedMaxIdCache[tableName];
+        if (cachedMax !== undefined && localMaxId <= cachedMax) {
+          console.log(`[Sync] Table "${tableName}" (append-only) is up-to-date in local cache (Max ID: ${localMaxId}). Skip Firestore check.`);
+          return;
+        }
+
+        // 4. No está en cache o hay nuevos IDs. Consultar ID máximo actual en Firestore (cuesta solo 1 operación de lectura).
+        let firestoreMaxId = 0;
+        const colRef = collection(firestore, tableName);
+        try {
+          const q = query(colRef, orderBy('id', 'desc'), limit(1));
+          const qSnapshot = await getDocs(q);
+          if (!qSnapshot.empty) {
+            const docData = qSnapshot.docs[0].data();
+            if (docData && typeof docData.id === 'number') {
+              firestoreMaxId = docData.id;
+            }
+          }
+        } catch (firestoreErr: any) {
+          console.warn(`[Sync] Failed to fetch max ID from Firestore for "${tableName}". Defaulting to full synchronization:`, firestoreErr.message);
+          // Si falla (ej. índice ausente en Firestore), desactivamos la optimización para esta pasada y dejamos que haga el flujo normal.
+          firestoreMaxId = -1;
+        }
+
+        if (firestoreMaxId >= 0) {
+          // Si el ID máximo de Firestore es igual o mayor al local, estamos al día. Guardamos en cache y retornamos.
+          if (localMaxId <= firestoreMaxId) {
+            lastSyncedMaxIdCache[tableName] = firestoreMaxId;
+            console.log(`[Sync] Table "${tableName}" is already fully synchronized up to Firestore Max ID: ${firestoreMaxId}.`);
+            return;
+          }
+
+          // Solo sincronizar registros locales con id > firestoreMaxId
+          rows = db.prepare(`SELECT * FROM ${tableName} WHERE id > ?`).all(firestoreMaxId) as any[];
+          console.log(`[Sync] Table "${tableName}" (append-only) has ${rows.length} new records to upload (IDs > ${firestoreMaxId}).`);
+
+          if (rows.length === 0) {
+            lastSyncedMaxIdCache[tableName] = firestoreMaxId;
+            return;
+          }
+
+          // Subir solo las filas nuevas usando lotes (batch)
+          let batch = writeBatch(firestore);
+          let opCount = 0;
+
+          for (const row of rows) {
+            const docId = String(row.id);
+            const docRef = doc(firestore, tableName, docId);
+
+            const cleanData: any = {};
+            for (const [key, val] of Object.entries(row)) {
+              if (val !== undefined) {
+                cleanData[key] = val;
+              }
+            }
+
+            batch.set(docRef, cleanData);
+            opCount++;
+
+            if (opCount >= 400) {
+              await batch.commit();
+              batch = writeBatch(firestore);
+              opCount = 0;
+            }
+          }
+
+          if (opCount > 0) {
+            await batch.commit();
+          }
+
+          // Guardar en cache el ID máximo local sincronizado exitosamente
+          lastSyncedMaxIdCache[tableName] = localMaxId;
+          console.log(`[Sync] Incremental sync for table "${tableName}" (${rows.length} rows) completed successfully.`);
+          return;
+        }
+      }
+
+      // Default fallback (para tablas pequeñas modificables o en caso de error del optimizador)
       rows = db.prepare(`SELECT * FROM ${tableName}`).all() as any[];
     }
 
@@ -394,6 +515,12 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
     }
 
     lastPullTimestamp = Date.now();
+    
+    // Clear the max ID cache to ensure we correctly revalidate next writes against SQLite / Firestore
+    for (const key of Object.keys(lastSyncedMaxIdCache)) {
+      delete lastSyncedMaxIdCache[key];
+    }
+    
     console.log("[Sync] Database synchronizations completed. GTR POS is fully ready and permanently synced.");
   } catch (error: any) {
     console.log("[Sync Offline Mode] Standard local database operates standalone. Remote cloud sync is bypassed:", error.message);
