@@ -545,8 +545,42 @@ export default function POS() {
             }
         };
 
+        const handleCustomBarcodeScan = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const barcode = customEvent.detail?.barcode;
+            if (barcode) {
+                const cleanCode = barcode.toLowerCase().trim();
+                const normCode = cleanCode.replace(/^0+/, '');
+                const match = products.find(p => {
+                    if (!p.sku) return false;
+                    const cleanSku = p.sku.trim().toLowerCase();
+                    const normSku = cleanSku.replace(/^0+/, '');
+                    return cleanSku === cleanCode || normSku === normCode || normSku === cleanCode || cleanSku === normCode;
+                });
+                if (match) {
+                    addToCart(match, 1);
+                    showNotification(`✓ [Escáner GTR] ${match.name} añadido al carrito`, "success");
+                    try {
+                        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+                        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                        osc.start();
+                        osc.stop(audioCtx.currentTime + 0.1);
+                    } catch (err) {}
+                } else {
+                    showNotification(`⚠️ [Escáner GTR] Código no registrado: ${barcode}`, "error");
+                }
+            }
+        };
+
+        window.addEventListener('gtr-barcode-scanned', handleCustomBarcodeScan);
         window.addEventListener('keydown', handleKeyDown);
         return () => {
+            window.removeEventListener('gtr-barcode-scanned', handleCustomBarcodeScan);
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, [products, addToCart, cart, activeCartItemId]);

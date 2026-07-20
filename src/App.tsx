@@ -10,7 +10,7 @@ import AudioVoice from './components/AudioVoice';
 import { 
     Menu, X, Home, ShoppingCart, Clock, Receipt, PackageSearch, 
     Folder, ClipboardCheck, Undo2, LayoutDashboard, TrendingUp, 
-    Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History, Loader2, Store
+    Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History, Loader2, Store, Cpu
 } from 'lucide-react';
 
 // Code Splitting with React.lazy
@@ -24,6 +24,7 @@ const CajasView = React.lazy(() => import('./views/CajasView'));
 const CuentasPorCobrarView = React.lazy(() => import('./views/CuentasPorCobrarView'));
 const DiagnosticoView = React.lazy(() => import('./views/DiagnosticoView'));
 const AuditoriaView = React.lazy(() => import('./views/AuditoriaView'));
+const HardwareConfigView = React.lazy(() => import('./views/HardwareConfigView'));
 
 // Named exports from ExtraViews loaded dynamically
 const InicioView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.InicioView })));
@@ -620,9 +621,9 @@ function AppLayout() {
                         {renderNavItem('reportes', 'Reportes', LayoutDashboard, 'view_reports')}
                         {renderNavItem('analisis', 'Análisis Productos', TrendingUp, 'view_reports')}
                         {renderNavItem('cajas', 'Cajas & Ingresos', Landmark, 'manage_caja')}
-                                    {renderNavItem('auditoria', 'Registro de Actividad', History, 'view_audit')}
                         {renderNavItem('auditoria', 'Registro de Actividad', History, 'view_audit')}
                         {renderNavItem('configuraciones', 'Configuraciones', Settings)}
+                        {renderNavItem('hardware', 'Conexión de Hardware', Cpu)}
                         {renderNavItem('diagnostico', 'Diagnósticos GTR', Activity)}
                         {user?.role === 'admin' && renderNavItem('usuarios', 'Usuarios', Users)}
                     </div>
@@ -1146,6 +1147,7 @@ function AppLayout() {
                                 {view === 'cajas' && hasPermission(user, 'manage_caja') && <CajasView />}
                                 {view === 'conteo_fisico' && <PhysicalCountManager onClose={() => setView('pos')} />}
                                 {view === 'configuraciones' && <ConfiguracionesView />}
+                                {view === 'hardware' && <HardwareConfigView />}
                                 {view === 'diagnostico' && <DiagnosticoView />}
                             </React.Suspense>
                         </motion.div>

@@ -2,8 +2,193 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+
+    // ----------------------------------------------------
+    // HELPER FUNCTIONS
+    // ----------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Resolves role of the current authenticated user
+    function getUserRole(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        ? get(/databases/$(database)/documents/users/$(uid)).data.role
+        : (exists(/databases/$(database)/documents/usuarios/$(uid))
+            ? get(/databases/$(database)/documents/usuarios/$(uid)).data.role
+            : null);
+    }
+
+    // Role predicates
+    function isAdminOrPropietario() {
+      let role = getUserRole(request.auth.uid);
+      return role == 'admin' || role == 'propietario';
+    }
+
+    function isVendedor() {
+      let role = getUserRole(request.auth.uid);
+      return role == 'vendedor' || role == 'vendedores' || role == 'trabajador';
+    }
+
+    function isAuthorizedUser() {
+      return isAdminOrPropietario() || isVendedor();
+    }
+
+    // ----------------------------------------------------
+    // MATCH RULES FOR ALL COLLECTIONS
+    // ----------------------------------------------------
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdminOrPropietario());
+      allow list: if isSignedIn() && isAdminOrPropietario();
+      allow create, update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /usuarios/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdminOrPropietario());
+      allow list: if isSignedIn() && isAdminOrPropietario();
+      allow create, update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Audit & Security Logs (Admin only) ---
+    match /security_logs/{logId} {
+      allow read: if isSignedIn() && isAdminOrPropietario();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /system_audit_logs/{logId} {
+      allow read: if isSignedIn() && isAdminOrPropietario();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /inventory_audit_logs/{logId} {
+      allow read: if isSignedIn() && isAdminOrPropietario();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /exchange_rate_audit/{auditId} {
+      allow read: if isSignedIn() && isAdminOrPropietario();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Core Master Data (Read by all, Write by Admin) ---
+    match /products/{productId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /departments/{departmentId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /settings/{settingKey} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Clients (Sellers can create, Admins can edit/delete) ---
+    match /clients/{clientId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Sales (Sellers can create, Admins can edit/delete) ---
+    match /sales/{saleId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /sale_items/{itemId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /pending_sales/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /pending_sale_items/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Shifts (Sellers can open/close (create/update), Admins can delete) ---
+    match /shifts/{shiftId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create, update: if isSignedIn() && isAuthorizedUser();
+      allow delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /caja_cierres/{cierreId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Cash Management (Sellers can interact with accounts/movements, Admins full control) ---
+    match /cash_accounts/{accountId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create, update: if isSignedIn() && isAuthorizedUser();
+      allow delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /cash_movements/{movementId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /cash_settlements/{settlementId} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Financials (Sellers can create credits/payments, Admins full control) ---
+    match /accounts_receivable/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create, update: if isSignedIn() && isAuthorizedUser();
+      allow delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /credit_payments/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /pending_sale_payments/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow create: if isSignedIn() && isAuthorizedUser();
+      allow update, delete: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Inventory Mgmt (Admin only) ---
+    match /stock_arrivals/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /inventory_counts/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    match /inventory_count_items/{id} {
+      allow read: if isSignedIn() && isAuthorizedUser();
+      allow write: if isSignedIn() && isAdminOrPropietario();
+    }
+
+    // --- Connection test path ---
+    match /test/{testId} {
+      allow read, write: if isSignedIn();
     }
   }
 }
