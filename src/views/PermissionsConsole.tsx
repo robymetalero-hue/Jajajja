@@ -166,7 +166,8 @@ export default function PermissionsConsole() {
             });
             setSecurityLogs(logs);
         } catch (e: any) {
-            console.error("Error fetching security logs from Firestore:", e.message);
+            console.warn("Security logs unavailable or offline in Firestore:", e?.message || e);
+            setSecurityLogs([]);
         } finally {
             setIsLoadingLogs(false);
         }
@@ -183,7 +184,7 @@ export default function PermissionsConsole() {
             });
             fetchSecurityLogs();
         } catch (e: any) {
-            console.error("Failed to write to security_logs in Firestore:", e.message);
+            console.warn("Could not log security action to Firestore:", e?.message || e);
         }
     };
 
