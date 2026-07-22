@@ -388,12 +388,8 @@ export function HistorialVentasView() {
             format: [width, predictedHeight]
         });
 
-        // Unique Premium Accent: Dark top bar with a modern aesthetic
-        doc.setFillColor(15, 23, 42); // Deep Navy Slate
-        doc.rect(0, 0, width, 4.5, 'F');
-
         doc.setFont(font, "normal");
-        let y = 11;
+        let y = 10;
 
         // 2. Centered Logo Image support (Base64)
         if (tpl.showLogo) {
@@ -453,7 +449,7 @@ export function HistorialVentasView() {
             y += 4;
         }
         if (tpl.showCashier) {
-            doc.text(`Atendió: ${sale.user_name || 'admin'} [REIMPRESION]`, ml, y);
+            doc.text(`Atendió: ${sale.user_name || 'maria'}`, ml, y);
             y += 4;
         }
         if (tpl.showClientInfo && sale.client_name) {
@@ -544,23 +540,24 @@ export function HistorialVentasView() {
         doc.setFont(font, "normal");
         doc.setFontSize(8.5);
 
+        doc.text(`Subtotal:`, ml, y);
+        const subtotalVal = sale.total + (sale.discount || 0);
+        const subStr = sale.currency === 'USD'
+            ? `$ ${subtotalVal.toFixed(2)}`
+            : `Bs. ${subtotalVal.toFixed(2)}`;
+        doc.text(subStr, colPriceX, y, { align: 'right' });
+        y += 4;
+
         if (sale.discount > 0) {
-            doc.text(`Subtotal:`, ml, y);
-            const subStr = sale.currency === 'USD'
-                ? `$ ${(sale.total + sale.discount).toFixed(2)}`
-                : `Bs. ${(sale.total + sale.discount).toFixed(2)}`;
-            doc.text(subStr, colPriceX, y, { align: 'right' });
-            y += 4;
-            
             doc.setFont(font, "bold");
-            doc.setTextColor(239, 68, 68); // Soft red for discount text
+            doc.setTextColor(239, 68, 68);
             doc.text(`Desc:`, ml, y);
             const descStr = sale.currency === 'USD'
                 ? `-$ ${sale.discount.toFixed(2)}`
                 : `-Bs. ${sale.discount.toFixed(2)}`;
             doc.text(descStr, colPriceX, y, { align: 'right' });
             y += 4;
-            doc.setTextColor(15, 23, 42); // Reset color
+            doc.setTextColor(15, 23, 42);
         }
 
         // Clean double-line look for total
@@ -569,7 +566,7 @@ export function HistorialVentasView() {
 
         doc.setFont(font, "bold");
         doc.setFontSize(9.5);
-        doc.text(`TOTAL COBRADO:`, ml, y);
+        doc.text(`TOTAL GENERAL:`, ml, y);
         const totalStr = sale.currency === 'USD'
             ? `$ ${sale.total.toFixed(2)} USD`
             : `Bs. ${sale.total.toFixed(2)}`;
@@ -579,7 +576,8 @@ export function HistorialVentasView() {
         if (tpl.showPaymentMethod) {
             doc.setFont(font, "normal");
             doc.setFontSize(8);
-            doc.text(`Método de Pago: ${sale.payment_method}`, ml, y);
+            const currLabel = sale.currency === 'USD' ? 'USD' : 'BOB';
+            doc.text(`Pago: ${sale.payment_method || 'Efectivo'} [${currLabel}]`, ml, y);
             y += 4.5;
         }
 
@@ -602,13 +600,13 @@ export function HistorialVentasView() {
             y += 1;
         }
 
-        // Reprint Notice & Barcode
+        // Barcode
         try {
             y += 1.5;
             doc.setFont(font, "normal");
             doc.setFontSize(5.5);
             doc.setTextColor(148, 163, 184);
-            doc.text("COPIA RE-IMPRESA SISTEMA FISCAL GTR-POS", cx, y, { align: 'center' });
+            doc.text("SCAN DE AUDITORIA DIGITAL GTR-POS", cx, y, { align: 'center' });
             y += 2;
             
             const barcodeWidth = 42;
@@ -616,7 +614,7 @@ export function HistorialVentasView() {
             let barX = startBarcodeX;
             doc.setDrawColor(30, 41, 59);
             
-            const strokeSeed = "110101100101110010110110110011101011110011010101";
+            const strokeSeed = "101100110101110010110110110011101011110011010101";
             for (let i = 0; i < strokeSeed.length; i++) {
                 const chr = strokeSeed[i];
                 if (chr === '1') {
@@ -630,7 +628,7 @@ export function HistorialVentasView() {
             y += 6.5;
             doc.setFont(font, "bold");
             doc.setFontSize(6);
-            doc.text(`*REPRINT-ID-${sale.id}*`, cx, y, { align: 'center' });
+            doc.text(`*GTR-${sale.id}*`, cx, y, { align: 'center' });
         } catch (barErr) {
             console.error("Barcode drawing on reprint failed gracefully", barErr);
         }

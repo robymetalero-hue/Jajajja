@@ -784,98 +784,90 @@ export default function POS() {
             };
 
             const width = tpl.ticketWidth || 80;
-            const ml = width === 58 ? 4 : 8;
+            const ml = 6;
             const mr = width - ml;
             const cx = width / 2;
             const font = tpl.fontFamily || 'Helvetica';
             
             let totalLines = 0;
-            if (tpl.showLogo) totalLines += 3;
-            if (tpl.showLogo && tpl.logoImage) totalLines += 4;
-            if (tpl.headerText) totalLines += tpl.headerText.split('\n').length * 1.5;
-            if (tpl.showHeaderDivider) totalLines += 1;
+            if (tpl.showLogo) totalLines += 2;
+            if (tpl.showLogo && tpl.logoImage) totalLines += 3;
+            if (tpl.headerText) totalLines += tpl.headerText.split('\n').length;
             if (tpl.showDate) totalLines += 1;
             if (tpl.showCashier) totalLines += 1;
             if (tpl.showClientInfo && sale.client_name) totalLines += 1;
-            totalLines += 2;
-            items.forEach(item => {
-                totalLines += 1;
-                if (tpl.showItemSKU) totalLines += 0.8;
-            });
-            totalLines += 2;
-            if (tpl.showPaymentMethod) totalLines += 1;
-            if (tpl.showFooterDivider) totalLines += 1;
-            if (tpl.footerText) totalLines += tpl.footerText.split('\n').length * 1.5;
+            totalLines += items.length * 1.5;
             totalLines += 8;
-            
-            const predictedHeight = Math.max(140, Math.round(totalLines * 5) + 32);
+
+            const predictedHeight = Math.max(120, Math.round(totalLines * 4.2) + 20);
 
             const doc = new jsPDF({
                 unit: 'mm',
                 format: [width, predictedHeight]
             });
 
-            // 1. Futuristic top styling cap
-            doc.setFillColor(37, 99, 235);
-            doc.rect(0, 0, width, 4, 'F');
-
             doc.setFont(font, "normal");
-            let y = 12;
+            let y = 10;
 
             if (tpl.showLogo) {
                 if (tpl.logoImage) {
                     try {
-                        const imgWidth = 16;
-                        const imgHeight = 16;
+                        const imgWidth = 14;
+                        const imgHeight = 14;
                         const lx = cx - (imgWidth / 2);
                         doc.addImage(tpl.logoImage, 'PNG', lx, y, imgWidth, imgHeight);
-                        y += imgHeight + 3;
+                        y += imgHeight + 2.5;
                     } catch {}
                 }
                 if (tpl.logoText) {
                     doc.setFont(font, "bold");
-                    doc.setFontSize(tpl.fontSizeHeader || 14);
-                    doc.text(tpl.logoText, cx, y, { align: 'center' });
-                    y += (tpl.fontSizeHeader / 2) + 3;
+                    doc.setFontSize(13);
+                    const wrappedLogo = doc.splitTextToSize(tpl.logoText, mr - ml);
+                    wrappedLogo.forEach((line: string) => {
+                        doc.text(line, cx, y, { align: 'center' });
+                        y += 5.5;
+                    });
+                    y += 1;
                 }
             }
 
             doc.setFont(font, "normal");
-            doc.setFontSize(tpl.fontSizeBody || 8);
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139);
 
             if (tpl.headerText) {
                 const wrappedHeader = doc.splitTextToSize(tpl.headerText, mr - ml);
                 wrappedHeader.forEach((line: string) => {
                     doc.text(line, cx, y, { align: 'center' });
-                    y += (tpl.fontSizeBody / 2) + 1.2;
+                    y += 3.8;
                 });
                 y += 1.5;
             }
 
+            doc.setTextColor(15, 23, 42);
+
             if (tpl.showHeaderDivider) {
+                doc.setLineWidth(0.2);
                 doc.setDrawColor(203, 213, 225);
-                doc.setLineWidth(0.3);
                 doc.line(ml, y, mr, y);
                 y += 4;
             }
 
-            doc.setFont(font, "bold");
-            doc.text(`TICKET DE VENTA (RE-IMPRESIÓN)`, cx, y, { align: 'center' });
-            y += 4.5;
-
             doc.setFont(font, "normal");
-            doc.setFontSize(tpl.fontSizeBody - 0.5);
+            doc.setFontSize(8);
             if (tpl.showDate) {
                 const formattedDate = new Date(sale.created_at || Date.now()).toLocaleString();
                 doc.text(`Fecha: ${formattedDate}`, ml, y);
                 y += 4;
             }
             if (tpl.showCashier) {
-                doc.text(`Cajero: ${sale.user_name || 'Cajero Fiscal'}`, ml, y);
+                doc.text(`Atendió: ${sale.user_name || 'maria'}`, ml, y);
                 y += 4;
             }
             if (tpl.showClientInfo && sale.client_name) {
+                doc.setFont(font, "bold");
                 doc.text(`Cliente: ${sale.client_name}`, ml, y);
+                doc.setFont(font, "normal");
                 y += 4.5;
             }
             if (sale.notes && sale.notes.trim() !== "") {
@@ -891,75 +883,112 @@ export default function POS() {
                 y += 0.5;
             }
 
-            // Products table header
+            y += 1;
+
+            // Header columns
             doc.setFont(font, "bold");
-            doc.text(`PRODUCTO`, ml, y);
-            doc.text(`CANT`, cx + 8, y, { align: 'right' });
-            doc.text(`TOTAL`, mr, y, { align: 'right' });
+            doc.setFontSize(8.5);
+            doc.text("CANT  PRODUCTO", ml, y);
+            const colPriceX = mr;
+            const currencyStr = sale.currency === 'USD' ? "SUB ($)" : "SUB (Bs.)";
+            doc.text(currencyStr, colPriceX, y, { align: 'right' });
             y += 2.5;
 
-            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.22);
+            doc.setDrawColor(148, 163, 184);
             doc.line(ml, y, mr, y);
-            y += 3.5;
+            y += 4;
 
             // Render products
-            doc.setFont(font, "normal");
             items.forEach(item => {
+                doc.setFontSize(tpl.fontSizeBody ? tpl.fontSizeBody + 1 : 9);
+                
+                doc.setFont(font, "bold");
+                doc.text(`${item.quantity}x`, ml, y);
+                
+                doc.setFont(font, "normal");
+                const detailX = ml + 8;
+                const maxNameWidth = mr - detailX - 20;
                 const nameText = item.product_name || 'Producto';
-                const truncatedName = nameText.length > 18 ? nameText.substring(0, 18) + '...' : nameText;
-                doc.text(truncatedName, ml, y);
-                doc.text(item.quantity.toString(), cx + 8, y, { align: 'right' });
-                doc.text(`Bs. ${(item.quantity * item.price).toFixed(2)}`, mr, y, { align: 'right' });
-                y += 4;
+                const wrappedName = doc.splitTextToSize(nameText, maxNameWidth);
+                
+                const firstLine = wrappedName[0] || "";
+                doc.text(firstLine, detailX, y);
+                
+                doc.setFont(font, "bold");
+                const subVal = (item.quantity * item.price);
+                const itemSub = sale.currency === 'USD' ? `$${subVal.toFixed(2)}` : `Bs.${subVal.toFixed(2)}`;
+                doc.text(itemSub, colPriceX, y, { align: 'right' });
+                y += 4.2;
+
+                if (wrappedName.length > 1) {
+                    doc.setFont(font, "normal");
+                    for (let i = 1; i < wrappedName.length; i++) {
+                        doc.text(wrappedName[i], detailX, y);
+                        y += 4.2;
+                    }
+                }
+
+                if (tpl.showItemSKU && item.product_sku) {
+                    doc.setFont(font, "italic");
+                    doc.setFontSize(7.5);
+                    doc.text(`SKU: ${item.product_sku}`, detailX, y - 0.5);
+                    y += 3.5;
+                }
             });
 
-            y += 1.5;
+            y += 1;
+            doc.setLineWidth(0.22);
+            doc.setDrawColor(148, 163, 184);
             doc.line(ml, y, mr, y);
             y += 4.5;
 
             // Totals
-            doc.setFont(font, "bold");
-            doc.text(`SUBTOTAL:`, ml, y);
+            doc.setFont(font, "normal");
+            doc.setFontSize(8.5);
+
             const discount = sale.discount || 0;
             const finalTotal = sale.total || 0;
             const subtotal = finalTotal + discount;
-            doc.text(`Bs. ${subtotal.toFixed(2)}`, mr, y, { align: 'right' });
+
+            doc.text(`Subtotal:`, ml, y);
+            const subStr = sale.currency === 'USD'
+                ? `$ ${subtotal.toFixed(2)}`
+                : `Bs. ${subtotal.toFixed(2)}`;
+            doc.text(subStr, colPriceX, y, { align: 'right' });
             y += 4;
 
             if (discount > 0) {
-                doc.setFont(font, "normal");
-                doc.text(`DESCUENTO:`, ml, y);
-                doc.text(`-Bs. ${discount.toFixed(2)}`, mr, y, { align: 'right' });
+                doc.setFont(font, "bold");
+                doc.setTextColor(239, 68, 68);
+                doc.text(`Desc:`, ml, y);
+                const descStr = sale.currency === 'USD'
+                    ? `-$ ${discount.toFixed(2)}`
+                    : `-Bs. ${discount.toFixed(2)}`;
+                doc.text(descStr, colPriceX, y, { align: 'right' });
                 y += 4;
+                doc.setTextColor(15, 23, 42);
             }
 
             doc.setFont(font, "bold");
-            doc.setFontSize(tpl.fontSizeBody + 1);
-            doc.text(`TOTAL NETO:`, ml, y);
-            doc.text(`Bs. ${finalTotal.toFixed(2)}`, mr, y, { align: 'right' });
-            y += 5.5;
+            doc.setFontSize(9.5);
+            doc.text(`TOTAL GENERAL:`, ml, y);
+            const totalStr = sale.currency === 'USD'
+                ? `$ ${finalTotal.toFixed(2)} USD`
+                : `Bs. ${finalTotal.toFixed(2)}`;
+            doc.text(totalStr, colPriceX, y, { align: 'right' });
+            y += 5;
 
-            doc.setFont(font, "normal");
-            doc.setFontSize(tpl.fontSizeBody - 1);
             if (tpl.showPaymentMethod) {
-                doc.text(`Método de Pago: ${sale.payment_method}`, ml, y);
-                y += 4.5;
-            }
-
-            const dbClient = sale.client_id ? clients.find(c => c.id === sale.client_id) : null;
-            if (dbClient) {
                 doc.setFont(font, "normal");
-                doc.setFontSize(tpl.fontSizeBody - 1);
-                doc.text(`Fidelización (Puntos):`, ml, y);
-                y += 3.5;
-                doc.text(`* Puntos Acumulados Actuales:`, ml + 3, y);
-                doc.setFont(font, "bold");
-                doc.text(`${dbClient.points || 0} pts`, mr, y, { align: 'right' });
+                doc.setFontSize(8);
+                const payCurr = sale.currency === 'USD' ? 'USD' : 'BOB';
+                doc.text(`Pago: ${sale.payment_method || 'Efectivo'} [${payCurr}]`, ml, y);
                 y += 4.5;
-                doc.setFont(font, "normal");
             }
 
             if (tpl.showFooterDivider) {
+                doc.setLineWidth(0.2);
                 doc.setDrawColor(203, 213, 225);
                 doc.line(ml, y, mr, y);
                 y += 4;
@@ -967,21 +996,48 @@ export default function POS() {
 
             if (tpl.footerText) {
                 doc.setFont(font, "normal");
+                doc.setFontSize(8);
+                doc.setTextColor(100, 116, 139);
                 const wrappedFooter = doc.splitTextToSize(tpl.footerText, mr - ml);
                 wrappedFooter.forEach((line: string) => {
                     doc.text(line, cx, y, { align: 'center' });
-                    y += (tpl.fontSizeBody / 2) + 1;
+                    y += 4;
                 });
-                y += 3;
+                y += 1;
             }
 
-            // Decorative digital check footer
-            doc.setFont(font, "bold");
-            doc.setFontSize(6.5);
-            doc.text(`TRANS: #${sale.id} / GTR-POS-SECURE`, cx, y, { align: 'center' });
-            y += 3;
-            doc.setFont(font, "normal");
-            doc.text(`SISTEMA DE FACTURACIÓN FISCAL AUTORIZADO`, cx, y, { align: 'center' });
+            // Digital Audit Barcode
+            try {
+                y += 1.5;
+                doc.setFont(font, "normal");
+                doc.setFontSize(5.5);
+                doc.setTextColor(148, 163, 184);
+                doc.text("SCAN DE AUDITORIA DIGITAL GTR-POS", cx, y, { align: 'center' });
+                y += 2;
+                
+                const barcodeWidth = 42;
+                const startBarcodeX = cx - (barcodeWidth / 2);
+                let barX = startBarcodeX;
+                doc.setDrawColor(30, 41, 59);
+                
+                const strokeSeed = "101100110101110010110110110011101011110011010101";
+                for (let i = 0; i < strokeSeed.length; i++) {
+                    const chr = strokeSeed[i];
+                    if (chr === '1') {
+                        const isThick = i % 3 === 0;
+                        doc.setLineWidth(isThick ? 0.6 : 0.22);
+                        doc.line(barX, y, barX, y + 4.5);
+                    }
+                    barX += (barcodeWidth / strokeSeed.length);
+                }
+                
+                y += 6.5;
+                doc.setFont(font, "bold");
+                doc.setFontSize(6);
+                doc.text(`*GTR-${sale.id}*`, cx, y, { align: 'center' });
+            } catch (barErr) {
+                console.error("Barcode drawing failed gracefully", barErr);
+            }
 
             doc.save(`Recibo_Past_Venta_${sale.id}.pdf`);
             showNotification(`✓ PDF de venta #${sale.id} descargado`, 'success');
@@ -1490,12 +1546,8 @@ export default function POS() {
                 format: [width, predictedHeight]
             });
 
-            // Unique Premium Accent: Dark top bar with a modern aesthetic
-            doc.setFillColor(15, 23, 42); // Deep Navy Slate
-            doc.rect(0, 0, width, 4.5, 'F');
-
             doc.setFont(font, "normal");
-            let y = 11;
+            let y = 10;
 
             // 2. Centered Logo Image support (Base64)
             if (tpl.showLogo) {

@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { 
   getFirestore, 
   collection, 
@@ -58,6 +59,35 @@ try {
 }
 
 export const firestore = firestoreInstance;
+
+let authPromise: Promise<void> | null = null;
+export async function ensureServerAuth() {
+  if (!app) return;
+  if (!authPromise) {
+    authPromise = (async () => {
+      const auth = getAuth(app);
+      const email = "server_sync@dstore.app";
+      const password = "ServerSync_SecretPassword!123";
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        console.log("[Sync] Server authenticated successfully.");
+      } catch (e: any) {
+        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+          console.log("[Sync] Server auth user not found, creating...");
+          try {
+            await createUserWithEmailAndPassword(auth, email, password);
+            console.log("[Sync] Server auth created and signed in.");
+          } catch (err: any) {
+            console.error("[Sync] Server auth create error:", err.message);
+          }
+        } else {
+          console.error("[Sync] Server sign in error:", e.message);
+        }
+      }
+    })();
+  }
+  return authPromise;
+}
 
 export const SYNC_TABLES = [
   'users',
@@ -122,6 +152,7 @@ export async function pushLocalToFirestore(tableName: string, idOrIds?: any | an
     console.warn("Firestore not initialized, skipping push for table:", tableName);
     return;
   }
+  await ensureServerAuth();
 
   try {
     const isSettings = tableName === 'settings';
@@ -365,6 +396,7 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
     console.warn("[Sync] Firestore not initialized, skipping database pull.");
     return;
   }
+  await ensureServerAuth();
 
   if (isPullingInProgress) {
     console.log("[Sync] Pull already in progress. Skipping concurrent execution.");

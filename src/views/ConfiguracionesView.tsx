@@ -1221,12 +1221,9 @@ export default function ConfiguracionesView() {
                                 </div>
                                 
                                 {/* Column dividers title */}
-                                <div className="mt-4 flex justify-between font-extrabold text-[9px] text-slate-400 uppercase tracking-widest leading-none">
-                                    <span>Item</span>
-                                    <div className="flex gap-6">
-                                        <span>Cant</span>
-                                        <span>Sub (Bs.)</span>
-                                    </div>
+                                <div className="mt-3 flex justify-between font-extrabold text-[9px] text-slate-700 uppercase tracking-widest leading-none border-b border-slate-200 pb-1">
+                                    <span>CANT &nbsp; PRODUCTO</span>
+                                    <span>SUB (Bs.)</span>
                                 </div>
                                 
                                 {/* Items Divider */}
@@ -1234,31 +1231,31 @@ export default function ConfiguracionesView() {
                                     {'-'.repeat(ticketWidth === 58 ? 28 : 40)}
                                 </div>
                                 
-                                {/* Dynamic Mock Item Loop */}
-                                <div style={{ fontSize: `${fontSizeBody}px` }} className="space-y-2 mt-1 py-1 text-slate-800 leading-snug font-semibold text-left">
+                                {/* Dynamic Mock Item Loop matching Image 2 */}
+                                <div style={{ fontSize: `${fontSizeBody}px` }} className="space-y-1.5 mt-2 text-slate-800 leading-snug font-semibold text-left">
                                     <div className="flex flex-col">
                                         <div className="flex justify-between items-start">
-                                            <span className="font-bold whitespace-normal text-left truncate max-w-[150px]">Coca Cola Retornable 3Lt</span>
-                                            <div className="flex gap-8 shrink-0">
-                                                <span className="w-8 text-right font-mono">2</span>
-                                                <span className="w-16 text-right font-mono">Bs. 27.00</span>
+                                            <div className="flex gap-1.5 truncate max-w-[170px]">
+                                                <span className="font-extrabold text-slate-900">5x</span>
+                                                <span className="font-normal text-slate-800 truncate">Samsung 16gb</span>
                                             </div>
+                                            <span className="font-extrabold text-slate-900 font-mono shrink-0">Bs. 825.00</span>
                                         </div>
                                         {showItemSKU && (
-                                            <span className="text-[9px] font-mono italic text-slate-400 leading-none">SKU: CC-BOB3000</span>
+                                            <span className="text-[9px] font-mono italic text-slate-400 leading-none ml-5">SKU: SAM-16GB-RAM</span>
                                         )}
                                     </div>
                                     
                                     <div className="flex flex-col">
                                         <div className="flex justify-between items-start">
-                                            <span className="font-bold whitespace-normal text-left truncate max-w-[150px]">Arroz Grano de Oro Especial</span>
-                                            <div className="flex gap-8 shrink-0">
-                                                <span className="w-8 text-right font-mono">1</span>
-                                                <span className="w-16 text-right font-mono">Bs. 45.00</span>
+                                            <div className="flex gap-1.5 truncate max-w-[170px]">
+                                                <span className="font-extrabold text-slate-900">7x</span>
+                                                <span className="font-normal text-slate-800 truncate">Micro sony 8</span>
                                             </div>
+                                            <span className="font-extrabold text-slate-900 font-mono shrink-0">Bs. 616.00</span>
                                         </div>
                                         {showItemSKU && (
-                                            <span className="text-[9px] font-mono italic text-slate-400 leading-none">SKU: AR-GDE-5KG</span>
+                                            <span className="text-[9px] font-mono italic text-slate-400 leading-none ml-5">SKU: SONY-MICRO-8</span>
                                         )}
                                     </div>
                                 </div>
@@ -1272,18 +1269,18 @@ export default function ConfiguracionesView() {
                                 <div style={{ fontSize: `${fontSizeBody}px` }} className="space-y-1 font-semibold text-left mt-1.5">
                                     <div className="flex justify-between text-slate-500">
                                         <span>Subtotal:</span>
-                                        <span className="font-mono">Bs. 72.00</span>
+                                        <span className="font-mono">Bs. 1441.00</span>
                                     </div>
                                     <div className="flex justify-between font-black text-slate-900 border-t border-slate-100 pt-1.5 text-[11px]">
                                         <span>TOTAL GENERAL:</span>
-                                        <span className="font-mono">Bs. 72.00</span>
+                                        <span className="font-mono">Bs. 1441.00</span>
                                     </div>
                                 </div>
                                 
                                 {/* Payment Line */}
                                 {showPaymentMethod && (
                                     <div style={{ fontSize: `${fontSizeBody}px` }} className="text-slate-500 mt-2 font-semibold text-left">
-                                        <span className="font-extrabold text-slate-400">Pago:</span> Efectivo
+                                        <span className="font-extrabold text-slate-400">Pago:</span> Efectivo [BOB]
                                     </div>
                                 )}
                                 
@@ -1303,6 +1300,25 @@ export default function ConfiguracionesView() {
                                         {footerText}
                                     </div>
                                 )}
+
+                                {/* Audit scan barcode emulator */}
+                                <div className="mt-3 text-center flex flex-col items-center gap-1 opacity-80 pt-1">
+                                    <span className="text-[7px] font-mono font-semibold text-slate-400 tracking-wider">SCAN DE AUDITORIA DIGITAL GTR-POS</span>
+                                    <div className="flex items-center justify-center gap-0.5 h-5 px-4 my-0.5">
+                                        <div className="w-0.5 h-full bg-slate-800" />
+                                        <div className="w-1 h-full bg-slate-800" />
+                                        <div className="w-0.5 h-full bg-slate-800" />
+                                        <div className="w-1.5 h-full bg-slate-800" />
+                                        <div className="w-0.5 h-full bg-slate-800" />
+                                        <div className="w-1 h-full bg-slate-800" />
+                                        <div className="w-0.5 h-full bg-slate-800" />
+                                        <div className="w-2 h-full bg-slate-800" />
+                                        <div className="w-0.5 h-full bg-slate-800" />
+                                        <div className="w-1.5 h-full bg-slate-800" />
+                                        <div className="w-0.5 h-full bg-slate-800" />
+                                    </div>
+                                    <span className="text-[8px] font-mono font-bold text-slate-700">*GTR-62*</span>
+                                </div>
                             </div>
                         </div>
                     </div>
