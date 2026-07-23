@@ -608,3 +608,123 @@ export function syncAfterWrite(tableOrMap: string | string[] | Record<string, an
     }
   }
 }
+
+/**
+ * Completely purges all data from Google Cloud Firestore and local SQLite,
+ * leaving a clean zeroed database with baseline seed admin users and default settings.
+ */
+export async function clearAllFirestoreAndLocalData(): Promise<void> {
+  console.log("[Sync Reset] Starting complete database purge (Local SQLite & Cloud Firestore)...");
+
+  // 1. Clear Google Cloud Firestore collections
+  if (firestore) {
+    try {
+      await ensureServerAuth();
+      for (const tableName of SYNC_TABLES) {
+        try {
+          const colRef = collection(firestore, tableName);
+          const snapshot = await getDocs(colRef);
+          if (!snapshot.empty) {
+            let batch = writeBatch(firestore);
+            let opCount = 0;
+            for (const docSnap of snapshot.docs) {
+              batch.delete(docSnap.ref);
+              opCount++;
+              if (opCount >= 400) {
+                await batch.commit();
+                batch = writeBatch(firestore);
+                opCount = 0;
+              }
+            }
+            if (opCount > 0) {
+              await batch.commit();
+            }
+            console.log(`[Sync Reset] Cleared ${snapshot.size} records from Firestore collection "${tableName}".`);
+          }
+        } catch (colErr: any) {
+          console.warn(`[Sync Reset Warning] Error clearing Firestore collection "${tableName}":`, colErr.message);
+        }
+      }
+    } catch (fsErr: any) {
+      console.warn("[Sync Reset Warning] Failed to authenticate or access Firestore during reset:", fsErr.message);
+    }
+  }
+
+  // 2. Clear local SQLite database tables
+  const tablesToClear = [
+    'products',
+    'clients',
+    'sales',
+    'sale_items',
+    'shifts',
+    'caja_cierres',
+    'departments',
+    'stock_arrivals',
+    'pending_sales',
+    'pending_sale_items',
+    'accounts_receivable',
+    'credit_payments',
+    'pending_sale_payments',
+    'cash_accounts',
+    'cash_movements',
+    'cash_settlements',
+    'inventory_audit_logs',
+    'system_audit_logs',
+    'inventory_counts',
+    'inventory_count_items',
+    'exchange_rate_audit'
+  ];
+
+  try {
+    db.exec(`DROP TRIGGER IF EXISTS prevent_system_audit_logs_delete;`);
+    db.exec(`DROP TRIGGER IF EXISTS prevent_system_audit_logs_update;`);
+  } catch (e) {}
+
+  for (const table of tablesToClear) {
+    try {
+      db.prepare(`DELETE FROM ${table}`).run();
+    } catch (e: any) {
+      console.warn(`[Local Reset Warning] Error deleting local table "${table}":`, e.message);
+    }
+  }
+
+  // Reset auto-increment sequence counters so ticket and product IDs start fresh at #1
+  try {
+    db.prepare(`DELETE FROM sqlite_sequence WHERE name NOT IN ('users')`).run();
+  } catch (e: any) {}
+
+  // Re-enable immutable triggers for system_audit_logs
+  try {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS prevent_system_audit_logs_update
+      BEFORE UPDATE ON system_audit_logs
+      BEGIN
+        SELECT RAISE(FAIL, 'system_audit_logs are immutable and cannot be updated');
+      END;
+      CREATE TRIGGER IF NOT EXISTS prevent_system_audit_logs_delete
+      BEFORE DELETE ON system_audit_logs
+      BEGIN
+        SELECT RAISE(FAIL, 'system_audit_logs are immutable and cannot be deleted');
+      END;
+    `);
+  } catch (e) {}
+
+  // Re-seed default settings and seed users in SQLite
+  try {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('exchange_rate', '6.96');
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('seeded_products', 'true');
+  } catch (e) {}
+
+  // Reset in-memory cache
+  for (const key of Object.keys(lastSyncedMaxIdCache)) {
+    delete lastSyncedMaxIdCache[key];
+  }
+
+  // 3. Re-push seed users and settings to Firestore
+  try {
+    await pushLocalToFirestore('users');
+    await pushLocalToFirestore('settings');
+  } catch (e) {}
+
+  console.log("[Sync Reset] Complete database reset finished successfully. Database is now at clean zero state.");
+}

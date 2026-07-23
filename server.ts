@@ -9,7 +9,7 @@ import jwt from "jsonwebtoken";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { db, getBoliviaISOString, insertSystemAuditLog } from "./database.ts";
-import { pullFirestoreToLocal, syncAfterWrite, pushAllLocalToFirestore, firestore } from "./firebaseSync.ts";
+import { pullFirestoreToLocal, syncAfterWrite, pushAllLocalToFirestore, firestore, clearAllFirestoreAndLocalData } from "./firebaseSync.ts";
 import { collection, getDocs } from "firebase/firestore";
 import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration } from "@google/genai";
 import { WebSocketServer } from "ws";
@@ -4399,6 +4399,17 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         hourlySales
       });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // REST API: Complete Database Purge & Reset to Zero
+  app.post("/api/admin/reset-database", async (req, res) => {
+    try {
+      await clearAllFirestoreAndLocalData();
+      res.json({ success: true, message: "Base de datos reiniciada a cero con éxito en SQLite y Google Cloud Firestore." });
+    } catch (e: any) {
+      console.error("Error clearing database:", e.message);
       res.status(500).json({ error: e.message });
     }
   });

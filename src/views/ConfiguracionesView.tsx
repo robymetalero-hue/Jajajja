@@ -486,6 +486,39 @@ export default function ConfiguracionesView() {
         }
     };
 
+    const handleResetDatabaseToZero = async () => {
+        const confirmCode = prompt("⚠️ ATENCIÓN: Esta acción BORRARÁ COMPLETAMENTE todas las ventas, productos, clientes, historial de turnos y auditorías tanto en SQLite Local como en Google Cloud Firestore para iniciar desde cero.\n\nEscribe 'BORRAR' para confirmar:");
+        if (confirmCode !== 'BORRAR') {
+            if (confirmCode !== null) showNotification?.("Reinicio cancelado.", "error");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const res = await fetch('/api/admin/reset-database', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                try {
+                    localStorage.removeItem('cached_products');
+                    localStorage.removeItem('cached_clients');
+                    localStorage.removeItem('cached_departments');
+                    localStorage.removeItem('cached_sales_tabs');
+                } catch (e) {}
+
+                showNotification?.("✓ " + (data.message || "Base de datos reiniciada a cero correctamente."), "success");
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1200);
+            } else {
+                throw new Error(data.error || "No se pudo reiniciar la base de datos.");
+            }
+        } catch (err: any) {
+            showNotification?.("Error al reiniciar base de datos: " + err.message, "error");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const [isCleaningCache, setIsCleaningCache] = useState<boolean>(false);
     const [cacheCleanStep, setCacheCleanStep] = useState<string>("");
 
@@ -1635,6 +1668,20 @@ export default function ConfiguracionesView() {
                                     <span className="text-[9px] font-bold text-slate-400">
                                         {isCleaningCache ? cacheCleanStep : "Fuerza una recarga limpia purgando archivos locales y re-solicitando datos actualizados del servidor"}
                                     </span>
+                                </div>
+                            </button>
+
+                            {/* Reiniciar Base de Datos a Cero Button */}
+                            <button
+                                type="button"
+                                disabled={isLoading}
+                                onClick={handleResetDatabaseToZero}
+                                className="sm:col-span-2 p-4 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-2xl flex flex-col items-center justify-center text-center gap-2 cursor-pointer shadow-md transition group animate-in fade-in"
+                            >
+                                <Trash2 size={22} className="text-white transition group-hover:scale-110" />
+                                <div className="flex flex-col gap-0.5">
+                                    <span className="text-[11.5px] font-black uppercase tracking-wider">Reiniciar Base de Datos a Cero</span>
+                                    <span className="text-[9.5px] font-medium text-rose-100">Pone a cero la base de datos (ventas, productos, clientes) tanto localmente como en Google Cloud</span>
                                 </div>
                             </button>
                         </div>
