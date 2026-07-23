@@ -292,7 +292,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const syncUserSession = async () => {
             try {
-                const res = await fetch('/api/auth/me');
+                const authToken = localStorage.getItem('auth_token');
+                const res = await fetch('/api/auth/me', {
+                    headers: {
+                        'x-user-id': String(user.id),
+                        'x-user-role': user.role || '',
+                        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+                    }
+                });
                 if (res.ok) {
                     const freshUser = await res.json();
                     
@@ -308,8 +315,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         console.log("[Sync] User role/permissions updated on server, synchronizing session...", freshUser);
                         setUser(freshUser);
                     }
-                } else if (res.status === 401) {
-                    // Invalid token or session revoked on server
+                } else if (res.status === 401 && authToken) {
+                    console.warn("[Sync] Auth token invalid or expired. Logging out.");
                     setUser(null);
                 }
             } catch (err) {

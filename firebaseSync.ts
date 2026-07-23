@@ -16,13 +16,29 @@ import { db } from './database.ts';
 import fs from 'fs';
 import path from 'path';
 
-// Load Firebase app configuration
-const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load Firebase app configuration searching multiple potential locations
 let firebaseConfig: any = {};
-try {
-  firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-} catch (e: any) {
-  console.warn("Could not read firebase-applet-config.json:", e.message);
+const configLocations = [
+  path.resolve(process.cwd(), 'firebase-applet-config.json'),
+  path.resolve(__dirname, 'firebase-applet-config.json'),
+  path.resolve(__dirname, '..', 'firebase-applet-config.json')
+];
+
+for (const loc of configLocations) {
+  try {
+    if (fs.existsSync(loc)) {
+      firebaseConfig = JSON.parse(fs.readFileSync(loc, 'utf8'));
+      console.log(`[Firebase] Loaded configuration file from: ${loc}`);
+      break;
+    }
+  } catch (e: any) {
+    console.warn(`[Firebase] Could not read config at ${loc}:`, e.message);
+  }
 }
 
 // Initialize Client-Side Firebase SDK on Node.js server side
@@ -65,25 +81,29 @@ export async function ensureServerAuth() {
   if (!app) return;
   if (!authPromise) {
     authPromise = (async () => {
-      const auth = getAuth(app);
-      const email = "server_sync@dstore.app";
-      const password = "ServerSync_SecretPassword!123";
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-        console.log("[Sync] Server authenticated successfully.");
-      } catch (e: any) {
-        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
-          console.log("[Sync] Server auth user not found, creating...");
-          try {
-            await createUserWithEmailAndPassword(auth, email, password);
-            console.log("[Sync] Server auth created and signed in.");
-          } catch (err: any) {
-            console.error("[Sync] Server auth create error:", err.message);
+      const authTimeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
+      const authTask = (async () => {
+        const auth = getAuth(app);
+        const email = "server_sync@dstore.app";
+        const password = "ServerSync_SecretPassword!123";
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+          console.log("[Sync] Server authenticated successfully.");
+        } catch (e: any) {
+          if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+            console.log("[Sync] Server auth user not found, creating...");
+            try {
+              await createUserWithEmailAndPassword(auth, email, password);
+              console.log("[Sync] Server auth created and signed in.");
+            } catch (err: any) {
+              console.warn("[Sync] Server auth create warning:", err.message);
+            }
+          } else {
+            console.warn("[Sync] Server sign in warning:", e.message);
           }
-        } else {
-          console.error("[Sync] Server sign in error:", e.message);
         }
-      }
+      })();
+      await Promise.race([authTask, authTimeout]);
     })();
   }
   return authPromise;
@@ -456,94 +476,98 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
 
     // Pull each collection and upsert data into SQLite
     for (const table of SYNC_TABLES) {
-      const snapshot = await getDocs(collection(firestore, table));
-      
-      if (snapshot.empty) {
-        const localCount = (db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as any)?.count || 0;
-        if (localCount > 0) {
-          console.log(`[Sync Safety] Descubierta tabla "${table}" vacía en Firestore pero con ${localCount} filas locales. Reparando y subiendo datos locales para prevenir pérdida.`);
-          await pushLocalToFirestore(table);
-        } else {
-          console.log(`[Sync] Table "${table}" was empty in both Cloud Firestore and SQLite.`);
-        }
-        continue;
-      }
-
-      // Sync remote records with SQLite table in an atomic transaction:
-      // Clear the local table first to ensure consistency (deletions are synced correctly from cloud to local),
-      // then insert the latest remote records with safety column checking.
-      let allowedColumns: Set<string>;
       try {
-        const info = db.pragma(`table_info(${table})`) as any[];
-        allowedColumns = new Set(info.map(col => col.name));
-      } catch (colErr: any) {
-        console.warn(`[Sync] Could not fetch columns for table ${table}, using document keys directly:`, colErr.message);
-        allowedColumns = new Set();
-      }
+        const snapshot = await getDocs(collection(firestore, table));
+        
+        if (snapshot.empty) {
+          const localCount = (db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as any)?.count || 0;
+          if (localCount > 0) {
+            console.log(`[Sync Safety] Descubierta tabla "${table}" vacía en Firestore pero con ${localCount} filas locales. Reparando y subiendo datos locales para prevenir pérdida.`);
+            await pushLocalToFirestore(table);
+          } else {
+            console.log(`[Sync] Table "${table}" was empty in both Cloud Firestore and SQLite.`);
+          }
+          continue;
+        }
 
-      if (table === 'departments') {
+        // Sync remote records with SQLite table in an atomic transaction:
+        // Clear the local table first to ensure consistency (deletions are synced correctly from cloud to local),
+        // then insert the latest remote records with safety column checking.
+        let allowedColumns: Set<string>;
         try {
-          const cleanedRow = db.prepare("SELECT value FROM settings WHERE key = 'migration_clean_ghost_departments_fs'").get() as any;
-          if (!cleanedRow) {
-            const defaultsToDelete = ['Storage', 'Micro SDs', 'USBs', 'Electronics', 'Micro SD'];
-            const deleteBatch = writeBatch(firestore);
-            let delCount = 0;
-            for (const docSnap of snapshot.docs) {
-              const data = docSnap.data();
-              if (data && data.name && defaultsToDelete.includes(data.name)) {
-                const prodCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE category = ?").get(data.name) as any;
-                if (!prodCount || prodCount.count === 0) {
-                  deleteBatch.delete(docSnap.ref);
-                  delCount++;
+          const info = db.pragma(`table_info(${table})`) as any[];
+          allowedColumns = new Set(info.map(col => col.name));
+        } catch (colErr: any) {
+          console.warn(`[Sync] Could not fetch columns for table ${table}, using document keys directly:`, colErr.message);
+          allowedColumns = new Set();
+        }
+
+        if (table === 'departments') {
+          try {
+            const cleanedRow = db.prepare("SELECT value FROM settings WHERE key = 'migration_clean_ghost_departments_fs'").get() as any;
+            if (!cleanedRow) {
+              const defaultsToDelete = ['Storage', 'Micro SDs', 'USBs', 'Electronics', 'Micro SD'];
+              const deleteBatch = writeBatch(firestore);
+              let delCount = 0;
+              for (const docSnap of snapshot.docs) {
+                const data = docSnap.data();
+                if (data && data.name && defaultsToDelete.includes(data.name)) {
+                  const prodCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE category = ?").get(data.name) as any;
+                  if (!prodCount || prodCount.count === 0) {
+                    deleteBatch.delete(docSnap.ref);
+                    delCount++;
+                  }
                 }
               }
+              if (delCount > 0) {
+                await deleteBatch.commit();
+                console.log(`[Sync Migration] Deleted ${delCount} unused default departments from Firestore.`);
+              }
+              db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_clean_ghost_departments_fs', 'true')").run();
             }
-            if (delCount > 0) {
-              await deleteBatch.commit();
-              console.log(`[Sync Migration] Deleted ${delCount} unused default departments from Firestore.`);
-            }
-            db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_clean_ghost_departments_fs', 'true')").run();
+          } catch (migErr: any) {
+            console.warn("[Sync Migration Error] Failed to run ghost departments Firestore cleanup migration:", migErr.message);
           }
-        } catch (migErr: any) {
-          console.warn("[Sync Migration Error] Failed to run ghost departments Firestore cleanup migration:", migErr.message);
         }
-      }
 
-      const syncTx = db.transaction(() => {
-        if (forceOverwrite) {
-          db.prepare(`DELETE FROM ${table}`).run();
-        }
-        
-        for (const docSnap of snapshot.docs) {
-          const data = docSnap.data();
+        const syncTx = db.transaction(() => {
+          if (forceOverwrite) {
+            db.prepare(`DELETE FROM ${table}`).run();
+          }
           
-          // Skip default departments if they are ghost defaults being deleted
-          if (table === 'departments' && data && data.name && ['Storage', 'Micro SDs', 'USBs', 'Electronics', 'Micro SD'].includes(data.name)) {
-            const prodCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE category = ?").get(data.name) as any;
-            if (!prodCount || prodCount.count === 0) {
-              continue; // Skip inserting this deleted department
+          for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            
+            // Skip default departments if they are ghost defaults being deleted
+            if (table === 'departments' && data && data.name && ['Storage', 'Micro SDs', 'USBs', 'Electronics', 'Micro SD'].includes(data.name)) {
+              const prodCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE category = ?").get(data.name) as any;
+              if (!prodCount || prodCount.count === 0) {
+                continue; // Skip inserting this deleted department
+              }
             }
+
+            let keys = Object.keys(data);
+            if (keys.length === 0) continue;
+
+            // Filter keys to valid SQLite columns only
+            if (allowedColumns.size > 0) {
+              keys = keys.filter(k => allowedColumns.has(k));
+            }
+            if (keys.length === 0) continue;
+
+            const placeholders = keys.map(() => '?').join(', ');
+            const values = keys.map(k => data[k]);
+
+            const insertSql = `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`;
+            db.prepare(insertSql).run(...values);
           }
+        });
 
-          let keys = Object.keys(data);
-          if (keys.length === 0) continue;
-
-          // Filter keys to valid SQLite columns only
-          if (allowedColumns.size > 0) {
-            keys = keys.filter(k => allowedColumns.has(k));
-          }
-          if (keys.length === 0) continue;
-
-          const placeholders = keys.map(() => '?').join(', ');
-          const values = keys.map(k => data[k]);
-
-          const insertSql = `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`;
-          db.prepare(insertSql).run(...values);
-        }
-      });
-
-      syncTx();
-      console.log(`[Sync] Table "${table}" successfully replaced local copy with ${snapshot.size} cloud records.`);
+        syncTx();
+        console.log(`[Sync] Table "${table}" successfully replaced local copy with ${snapshot.size} cloud records.`);
+      } catch (tableErr: any) {
+        console.warn(`[Sync Warning] Failed to pull table "${table}" from Cloud Firestore:`, tableErr.message);
+      }
     }
 
     lastPullTimestamp = Date.now();
