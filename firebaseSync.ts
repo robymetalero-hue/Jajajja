@@ -480,12 +480,19 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
         const snapshot = await getDocs(collection(firestore, table));
         
         if (snapshot.empty) {
-          const localCount = (db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as any)?.count || 0;
-          if (localCount > 0) {
-            console.log(`[Sync Safety] Descubierta tabla "${table}" vacía en Firestore pero con ${localCount} filas locales. Reparando y subiendo datos locales para prevenir pérdida.`);
-            await pushLocalToFirestore(table);
+          if (metaDoc.exists()) {
+            try {
+              db.prepare(`DELETE FROM ${table}`).run();
+            } catch (e: any) {}
+            console.log(`[Sync] Table "${table}" is empty in Cloud Firestore. Local SQLite table synced to zero records.`);
           } else {
-            console.log(`[Sync] Table "${table}" was empty in both Cloud Firestore and SQLite.`);
+            const localCount = (db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as any)?.count || 0;
+            if (localCount > 0) {
+              console.log(`[Sync Safety] Descubierta tabla "${table}" vacía en Firestore pero con ${localCount} filas locales. Reparando y subiendo datos locales para prevenir pérdida.`);
+              await pushLocalToFirestore(table);
+            } else {
+              console.log(`[Sync] Table "${table}" was empty in both Cloud Firestore and SQLite.`);
+            }
           }
           continue;
         }
@@ -645,6 +652,10 @@ export async function clearAllFirestoreAndLocalData(): Promise<void> {
           console.warn(`[Sync Reset Warning] Error clearing Firestore collection "${tableName}":`, colErr.message);
         }
       }
+
+      // Mark sync_metadata status as initialized so empty collections are treated as intentionally zeroed
+      const metaRef = doc(firestore, 'sync_metadata', 'status');
+      await setDoc(metaRef, { initialized: true, resetAt: new Date().toISOString() });
     } catch (fsErr: any) {
       console.warn("[Sync Reset Warning] Failed to authenticate or access Firestore during reset:", fsErr.message);
     }

@@ -432,3 +432,31 @@ export async function clearCachedAppState(key: string): Promise<void> {
     }
 }
 
+/**
+ * Purges ALL offline queues, offline sales, offline actions, and cached app state from IndexedDB and LocalStorage
+ */
+export async function clearAllOfflineStorage(): Promise<void> {
+    memoryQueue = [];
+    memoryActionsQueue = [];
+    Object.keys(memoryStateCache).forEach(k => delete memoryStateCache[k]);
+
+    try {
+        localStorage.clear();
+    } catch (e) {}
+
+    try {
+        const db = await openDB();
+        const stores = [STORE_NAME, ACTIONS_STORE_NAME, STATE_CACHE_STORE];
+        const tx = db.transaction(stores, 'readwrite');
+        stores.forEach(s => {
+            try { tx.objectStore(s).clear(); } catch (e) {}
+        });
+        await new Promise<void>((res) => {
+            tx.oncomplete = () => { db.close(); res(); };
+            tx.onerror = () => { db.close(); res(); };
+        });
+    } catch (e) {
+        console.warn("Failed to clear IndexedDB stores:", e);
+    }
+}
+

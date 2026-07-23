@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { Settings, TrendingUp, History, ShieldAlert, Lock, Save, Cloud, Database, Download, Upload, FileJson, RefreshCw, DollarSign, Info, ShieldCheck, Receipt, Eye, Sliders, Type, RotateCcw, Printer, Users, Star, Trash2, Search, CloudUpload, CloudDownload, Activity, Smartphone, Sparkles } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import RgbCustomizerPanel from '../components/RgbCustomizerPanel';
-import { saveOfflineAction } from '../utils/offlineStorage';
+import { saveOfflineAction, clearAllOfflineStorage } from '../utils/offlineStorage';
 
 interface AuditLog {
     id: number;
@@ -499,10 +499,7 @@ export default function ConfiguracionesView() {
             const data = await res.json();
             if (res.ok) {
                 try {
-                    localStorage.removeItem('cached_products');
-                    localStorage.removeItem('cached_clients');
-                    localStorage.removeItem('cached_departments');
-                    localStorage.removeItem('cached_sales_tabs');
+                    await clearAllOfflineStorage();
                 } catch (e) {}
 
                 showNotification?.("✓ " + (data.message || "Base de datos reiniciada a cero correctamente."), "success");
