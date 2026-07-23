@@ -347,7 +347,7 @@ async function startServer() {
   }
   app.use("/shared_tickets", express.static(sharedTicketsDir));
 
-  const PORT = parseInt(process.env.PORT || "3000", 10);
+  const PORT = 3000;
   
   const server = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });

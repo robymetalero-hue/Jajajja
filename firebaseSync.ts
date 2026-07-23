@@ -16,17 +16,11 @@ import { db } from './database.ts';
 import fs from 'fs';
 import path from 'path';
 
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 // Load Firebase app configuration searching multiple potential locations
 let firebaseConfig: any = {};
 const configLocations = [
   path.resolve(process.cwd(), 'firebase-applet-config.json'),
-  path.resolve(__dirname, 'firebase-applet-config.json'),
-  path.resolve(__dirname, '..', 'firebase-applet-config.json')
+  path.resolve(process.cwd(), '..', 'firebase-applet-config.json')
 ];
 
 for (const loc of configLocations) {
