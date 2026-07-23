@@ -531,7 +531,7 @@ export async function pullFirestoreToLocal(forceOverwrite: boolean = false) {
         }
 
         const syncTx = db.transaction(() => {
-          if (forceOverwrite) {
+          if (forceOverwrite && table !== 'system_audit_logs') {
             db.prepare(`DELETE FROM ${table}`).run();
           }
           

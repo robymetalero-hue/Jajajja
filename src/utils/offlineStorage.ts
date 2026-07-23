@@ -4,7 +4,8 @@
 const DB_NAME = 'gtr_pos_offline_db';
 const STORE_NAME = 'offline_sales';
 const ACTIONS_STORE_NAME = 'offline_actions';
-const DB_VERSION = 2; // Incremented database version to support new store
+const STATE_CACHE_STORE = 'app_state_cache';
+const DB_VERSION = 3; // Incremented database version to support state persistence cache store
 
 export interface OfflineSale {
     id: string; // Unique temporary ID
@@ -27,6 +28,7 @@ export interface OfflineAction {
 // Memory fallback queue in case both IndexedDB and LocalStorage are inaccessible
 let memoryQueue: OfflineSale[] = [];
 let memoryActionsQueue: OfflineAction[] = [];
+const memoryStateCache: Record<string, any> = {};
 
 /**
  * Safely opens IndexedDB
@@ -56,6 +58,9 @@ function openDB(): Promise<IDBDatabase> {
                 }
                 if (!db.objectStoreNames.contains(ACTIONS_STORE_NAME)) {
                     db.createObjectStore(ACTIONS_STORE_NAME, { keyPath: 'id' });
+                }
+                if (!db.objectStoreNames.contains(STATE_CACHE_STORE)) {
+                    db.createObjectStore(STATE_CACHE_STORE, { keyPath: 'key' });
                 }
             };
         } catch (err) {
@@ -323,3 +328,107 @@ export async function hasOfflineActions(): Promise<boolean> {
     const list = await getOfflineActions();
     return list.length > 0;
 }
+
+/**
+ * Persists generic app state (products, clients, settings, departments, cart) into IndexedDB
+ */
+export async function cacheAppState(key: string, data: any): Promise<void> {
+    if (data === undefined || data === null) return;
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STATE_CACHE_STORE, 'readwrite');
+            const store = transaction.objectStore(STATE_CACHE_STORE);
+            const record = { key, data, updatedAt: new Date().toISOString() };
+            const request = store.put(record);
+
+            request.onsuccess = () => {
+                db.close();
+                resolve();
+            };
+
+            request.onerror = () => {
+                db.close();
+                reject(request.error || new Error('Failed to cache state in IndexedDB'));
+            };
+        });
+    } catch (err) {
+        console.warn(`[IndexedDB Cache] Failed to put key "${key}", falling back to LocalStorage:`, err);
+        try {
+            localStorage.setItem(`idxdb_fallback_${key}`, JSON.stringify(data));
+        } catch (lsErr) {
+            memoryStateCache[key] = data;
+        }
+    }
+}
+
+/**
+ * Retrieves cached app state from IndexedDB
+ */
+export async function getCachedAppState<T>(key: string): Promise<T | null> {
+    try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction(STATE_CACHE_STORE, 'readonly');
+            const store = transaction.objectStore(STATE_CACHE_STORE);
+            const request = store.get(key);
+
+            request.onsuccess = () => {
+                db.close();
+                if (request.result && request.result.data !== undefined) {
+                    resolve(request.result.data as T);
+                } else {
+                    // Try LocalStorage fallback
+                    const fallback = localStorage.getItem(`idxdb_fallback_${key}`);
+                    if (fallback) {
+                        try {
+                            resolve(JSON.parse(fallback));
+                        } catch {
+                            resolve(null);
+                        }
+                    } else {
+                        resolve(memoryStateCache[key] ?? null);
+                    }
+                }
+            };
+
+            request.onerror = () => {
+                db.close();
+                const fallback = localStorage.getItem(`idxdb_fallback_${key}`);
+                if (fallback) {
+                    try { resolve(JSON.parse(fallback)); } catch { resolve(null); }
+                } else {
+                    resolve(memoryStateCache[key] ?? null);
+                }
+            };
+        });
+    } catch (err) {
+        console.warn(`[IndexedDB Cache] IndexedDB open error for "${key}", using fallback:`, err);
+        const fallback = localStorage.getItem(`idxdb_fallback_${key}`);
+        if (fallback) {
+            try { return JSON.parse(fallback); } catch { return null; }
+        }
+        return memoryStateCache[key] ?? null;
+    }
+}
+
+/**
+ * Clears cached app state from IndexedDB
+ */
+export async function clearCachedAppState(key: string): Promise<void> {
+    try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction(STATE_CACHE_STORE, 'readwrite');
+            const store = transaction.objectStore(STATE_CACHE_STORE);
+            const request = store.delete(key);
+
+            request.onsuccess = () => { db.close(); resolve(); };
+            request.onerror = () => { db.close(); resolve(); };
+        });
+    } catch (err) {
+        localStorage.removeItem(`idxdb_fallback_${key}`);
+        delete memoryStateCache[key];
+    }
+}
+

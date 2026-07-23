@@ -5,7 +5,7 @@ import { normalizePermissions } from '../utils/permissions';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, onSnapshot, getDocFromServer, setLogLevel } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { getOfflineSales, deleteOfflineSale, getOfflineActions, deleteOfflineAction, saveOfflineAction, hasOfflineActions, hasOfflineSales } from '../utils/offlineStorage';
+import { getOfflineSales, deleteOfflineSale, getOfflineActions, deleteOfflineAction, saveOfflineAction, hasOfflineActions, hasOfflineSales, cacheAppState, getCachedAppState } from '../utils/offlineStorage';
 
 // Initialize Client-Side Firebase SDK
 const app = initializeApp(firebaseConfig);
@@ -416,9 +416,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia' | 'Crédito'>(() => initialTab.paymentMethod || 'Efectivo');
     const [cart, setCart] = useState<CartItem[]>(() => initialTab.cart || []);
 
-    // Sync tabs list and active ID to localStorage
+    // Sync tabs list and active ID to localStorage and IndexedDB
     useEffect(() => {
         localStorage.setItem('cached_sales_tabs', JSON.stringify(tabs));
+        cacheAppState('cached_sales_tabs', tabs);
     }, [tabs]);
 
     useEffect(() => {
@@ -705,6 +706,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         root.style.setProperty('--rgb-direction', direction);
     }, [rgbSettings]);
 
+    // Pre-hydrate state from IndexedDB instantly on component mount
+    useEffect(() => {
+        const prehydrateFromIndexedDB = async () => {
+            try {
+                const [cachedProds, cachedClis, cachedDeps, cachedRcpt, cachedExRate, cachedSalesTabs] = await Promise.all([
+                    getCachedAppState<Product[]>('cached_products'),
+                    getCachedAppState<Client[]>('cached_clients'),
+                    getCachedAppState<Department[]>('cached_departments'),
+                    getCachedAppState<ReceiptTemplate>('cached_receipt_template'),
+                    getCachedAppState<number>('cached_exchange_rate'),
+                    getCachedAppState<SaleTab[]>('cached_sales_tabs')
+                ]);
+
+                if (cachedProds && cachedProds.length > 0) {
+                    setProducts(cachedProds);
+                    setTotalProducts(cachedProds.length);
+                }
+                if (cachedClis && cachedClis.length > 0) setClients(cachedClis);
+                if (cachedDeps && cachedDeps.length > 0) setDepartments(cachedDeps);
+                if (cachedRcpt) setReceiptTemplate(cachedRcpt);
+                if (cachedExRate) setExchangeRate(cachedExRate);
+                if (cachedSalesTabs && cachedSalesTabs.length > 0) setTabs(cachedSalesTabs);
+            } catch (err) {
+                console.warn("[IndexedDB] Hydration error:", err);
+            }
+        };
+        prehydrateFromIndexedDB();
+    }, []);
+
     useEffect(() => {
         if (user && user.username && user.username !== 'none') {
             setIsInitializing(true);
@@ -742,14 +772,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const data = await res.json();
             setReceiptTemplate(data);
             localStorage.setItem('cached_receipt_template', JSON.stringify(data));
+            cacheAppState('cached_receipt_template', data);
         } catch (e) {
             console.warn("Failed to fetch receipt template, using cached value:", e);
-            const cached = localStorage.getItem('cached_receipt_template');
-            if (cached) {
-                try {
-                    setReceiptTemplate(JSON.parse(cached));
-                } catch (parseErr) {
-                    console.error("Failed to parse cached receipt template:", parseErr);
+            const cachedIdx = await getCachedAppState<ReceiptTemplate>('cached_receipt_template');
+            if (cachedIdx) {
+                setReceiptTemplate(cachedIdx);
+            } else {
+                const cached = localStorage.getItem('cached_receipt_template');
+                if (cached) {
+                    try {
+                        setReceiptTemplate(JSON.parse(cached));
+                    } catch (parseErr) {
+                        console.error("Failed to parse cached receipt template:", parseErr);
+                    }
                 }
             }
         }
@@ -761,14 +797,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const data = await res.json();
             setDepartments(data);
             localStorage.setItem('cached_departments', JSON.stringify(data));
+            cacheAppState('cached_departments', data);
         } catch (e) {
             console.warn("Failed to fetch departments, using cached value:", e);
-            const cached = localStorage.getItem('cached_departments');
-            if (cached) {
-                try {
-                    setDepartments(JSON.parse(cached));
-                } catch (parseErr) {
-                    console.error("Failed to parse cached departments:", parseErr);
+            const cachedIdx = await getCachedAppState<Department[]>('cached_departments');
+            if (cachedIdx && cachedIdx.length > 0) {
+                setDepartments(cachedIdx);
+            } else {
+                const cached = localStorage.getItem('cached_departments');
+                if (cached) {
+                    try {
+                        setDepartments(JSON.parse(cached));
+                    } catch (parseErr) {
+                        console.error("Failed to parse cached departments:", parseErr);
+                    }
                 }
             }
         }
@@ -778,6 +820,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
             setReceiptTemplate(template);
             localStorage.setItem('cached_receipt_template', JSON.stringify(template));
+            cacheAppState('cached_receipt_template', template);
             const res = await fetch('/api/settings/receipt', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -804,25 +847,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setTotalProducts(data.total);
                 setHasMoreProducts(data.has_more);
                 localStorage.setItem('cached_products', JSON.stringify(data.products));
+                cacheAppState('cached_products', data.products);
             } else {
                 const arr = Array.isArray(data) ? data : [];
                 setProducts(arr);
                 setTotalProducts(arr.length);
                 setHasMoreProducts(false);
                 localStorage.setItem('cached_products', JSON.stringify(arr));
+                cacheAppState('cached_products', arr);
             }
             setIsOffline(false);
         } catch (e) {
             console.warn("Failed to fetch products, using cached value:", e);
-            const cached = localStorage.getItem('cached_products');
-            if (cached) {
-                try {
-                    const parsed = JSON.parse(cached);
-                    setProducts(parsed);
-                    setTotalProducts(parsed.length);
-                    setHasMoreProducts(false);
-                } catch (parseErr) {
-                    console.error("Failed to parse cached products:", parseErr);
+            const cachedIdx = await getCachedAppState<Product[]>('cached_products');
+            if (cachedIdx && cachedIdx.length > 0) {
+                setProducts(cachedIdx);
+                setTotalProducts(cachedIdx.length);
+                setHasMoreProducts(false);
+            } else {
+                const cached = localStorage.getItem('cached_products');
+                if (cached) {
+                    try {
+                        const parsed = JSON.parse(cached);
+                        setProducts(parsed);
+                        setTotalProducts(parsed.length);
+                        setHasMoreProducts(false);
+                    } catch (parseErr) {
+                        console.error("Failed to parse cached products:", parseErr);
+                    }
                 }
             }
             if (e instanceof Error && (e.message.includes('Failed to fetch') || e.message.includes('fetch'))) {
@@ -842,6 +894,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     const merged = [...prev, ...data.products];
                     // Save merged set in cache to prevent offline gaps
                     localStorage.setItem('cached_products', JSON.stringify(merged));
+                    cacheAppState('cached_products', merged);
                     return merged;
                 });
                 setProductsOffset(nextOffset);
@@ -860,15 +913,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const data = await res.json();
             setClients(data);
             localStorage.setItem('cached_clients', JSON.stringify(data));
+            cacheAppState('cached_clients', data);
             setIsOffline(false);
         } catch (e) {
             console.warn("Failed to fetch clients, using cached value:", e);
-            const cached = localStorage.getItem('cached_clients');
-            if (cached) {
-                try {
-                    setClients(JSON.parse(cached));
-                } catch (parseErr) {
-                    console.error("Failed to parse cached clients:", parseErr);
+            const cachedIdx = await getCachedAppState<Client[]>('cached_clients');
+            if (cachedIdx && cachedIdx.length > 0) {
+                setClients(cachedIdx);
+            } else {
+                const cached = localStorage.getItem('cached_clients');
+                if (cached) {
+                    try {
+                        setClients(JSON.parse(cached));
+                    } catch (parseErr) {
+                        console.error("Failed to parse cached clients:", parseErr);
+                    }
                 }
             }
             if (e instanceof Error && (e.message.includes('Failed to fetch') || e.message.includes('fetch'))) {
