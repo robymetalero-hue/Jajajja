@@ -276,6 +276,12 @@ async function startServer() {
     access_ai: true,
   };
 
+  function isMainAdmin(u: any): boolean {
+    if (!u) return false;
+    const username = String(u.username || '').toLowerCase().trim();
+    return username === 'admin' || username === 'roby' || Number(u.id) === 1;
+  }
+
   const enforcePermission = (permissionKey: string) => {
     return (req: any, res: any, next: any) => {
       const userRole = req.headers['x-user-role'] || req.query.user_role;
@@ -570,8 +576,13 @@ async function startServer() {
   app.post("/api/users", enforcePermission('admin_users'), (req, res) => {
     const { username, password, role, permissions, email } = req.body;
     try {
+      const cleanUsername = String(username || '').toLowerCase().trim();
+      if (cleanUsername === 'admin' || cleanUsername === 'roby') {
+        return res.status(403).json({ error: "El nombre de usuario 'admin' o 'roby' está reservado exclusivamente para el Administrador Principal." });
+      }
+
       const result = db.prepare('INSERT INTO users (username, password, role, permissions, email) VALUES (?, ?, ?, ?, ?)')
-        .run(username, password, role, JSON.stringify(permissions), email || null);
+        .run(cleanUsername, password, role || 'vendedor', JSON.stringify(permissions || {}), email || null);
       
       // Audit user creation (Omit passwords for security)
       try {
@@ -584,14 +595,14 @@ async function startServer() {
           severity: 'warning',
           entityType: 'usuario',
           entityId: result.lastInsertRowid,
-          entityName: username,
+          entityName: cleanUsername,
           userId: auditUser.userId,
           userName: auditUser.userName || 'admin',
           userRole: auditUser.userRole,
           affectedUserId: result.lastInsertRowid,
-          affectedUserName: username,
+          affectedUserName: cleanUsername,
           reason: req.body.reason || 'Creación manual de cuenta de usuario',
-          afterData: { username, role, email, permissions },
+          afterData: { username: cleanUsername, role, email, permissions },
           status: 'success'
         });
       } catch (auditErr: any) {
@@ -622,8 +633,41 @@ async function startServer() {
       const requesterId = req.headers['x-user-id'];
       const requesterRole = req.headers['x-user-role'];
       
+      const targetUser = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(id) as any;
+      if (!targetUser) {
+        return res.status(404).json({ error: "El usuario especificado no existe." });
+      }
+
+      const requesterUser = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(requesterId) as any;
+      const isReqMainAdmin = isMainAdmin(requesterUser) || String(requesterId) === String(targetUser.id) && isMainAdmin(targetUser);
+      const isTargetMainAdmin = isMainAdmin(targetUser);
+
+      // CRITICAL SECURITY RULE: The Main Administrator is untouchable by secondary admins
+      if (isTargetMainAdmin) {
+        if (!isReqMainAdmin && String(requesterId) !== String(targetUser.id)) {
+          return res.status(403).json({ 
+            error: "Acceso denegado: El Administrador Principal es la pieza clave del sistema. Los administradores secundarios no tienen permiso para editar ni modificar sus privilegios." 
+          });
+        }
+
+        // Even if Main Admin updates themselves, username, role and full permissions stay fixed
+        const fullPermissions: Record<string, boolean> = {};
+        for (const k in SERVER_DEFAULT_PERMISSIONS) {
+          fullPermissions[k] = true;
+        }
+
+        const oldUser = db.prepare('SELECT id, username, password, role, email, permissions FROM users WHERE id = ?').get(id) as any;
+        const finalPassword = password && password.trim() ? password.trim() : (oldUser ? oldUser.password : "");
+
+        db.prepare('UPDATE users SET username = ?, password = ?, role = ?, permissions = ?, email = ? WHERE id = ?')
+          .run(targetUser.username, finalPassword, 'admin', JSON.stringify(fullPermissions), email || null, id);
+
+        syncAfterWrite("users");
+        return res.json({ success: true, message: "Cuenta de Administrador Principal actualizada correctamente manteniendo acceso total." });
+      }
+
       // If not self-updating and not admin, enforce admin_users permission
-      if (requesterRole !== 'admin' && requesterRole !== 'administrador' && String(id) !== String(requesterId)) {
+      if (!isReqMainAdmin && requesterRole !== 'admin' && requesterRole !== 'administrador' && String(id) !== String(requesterId)) {
         const userPermissionsRaw = req.headers['x-user-permissions'];
         let perms: any = {};
         try { if (userPermissionsRaw) perms = JSON.parse(String(userPermissionsRaw)); } catch (err) {}
@@ -632,10 +676,9 @@ async function startServer() {
         }
       }
 
-      // Safety: Prevent modifying the master admin username by ID (usually id = 1) if it's the default admin
-      const targetUser = db.prepare('SELECT username FROM users WHERE id = ?').get(id) as any;
-      if (targetUser && (targetUser.username === 'admin' || targetUser.username === 'roby') && username !== targetUser.username) {
-        return res.status(403).json({ error: "No se permite cambiar el nombre del usuario administrador maestro." });
+      const lowerNewUsername = username ? username.toLowerCase().trim() : targetUser.username;
+      if ((lowerNewUsername === 'admin' || lowerNewUsername === 'roby') && targetUser.username !== lowerNewUsername) {
+        return res.status(403).json({ error: "El nombre de usuario 'admin' o 'roby' está reservado exclusivamente para el Administrador Principal." });
       }
 
       const oldUser = db.prepare('SELECT id, username, password, role, email, permissions FROM users WHERE id = ?').get(id) as any;
@@ -646,7 +689,7 @@ async function startServer() {
       const finalPassword = password && password.trim() ? password.trim() : (oldUser ? oldUser.password : "");
 
       db.prepare('UPDATE users SET username = ?, password = ?, role = ?, permissions = ?, email = ? WHERE id = ?')
-        .run(username, finalPassword, role, JSON.stringify(permissions), email || null, id);
+        .run(lowerNewUsername, finalPassword, role || 'vendedor', JSON.stringify(permissions || {}), email || null, id);
       
       // Audit user modification (Omit passwords for security)
       try {
@@ -659,15 +702,15 @@ async function startServer() {
           severity: 'warning',
           entityType: 'usuario',
           entityId: id,
-          entityName: username,
+          entityName: lowerNewUsername,
           userId: auditUser.userId,
           userName: auditUser.userName || 'admin',
           userRole: auditUser.userRole,
           affectedUserId: id,
-          affectedUserName: username,
+          affectedUserName: lowerNewUsername,
           reason: req.body.reason || 'Modificación manual de cuenta/permisos de usuario',
           beforeData: oldUser,
-          afterData: { username, role, email, permissions },
+          afterData: { username: lowerNewUsername, role, email, permissions },
           status: 'success'
         });
       } catch (auditErr: any) {
@@ -685,9 +728,13 @@ async function startServer() {
   app.delete("/api/users/:id", enforcePermission('admin_users'), (req, res) => {
     const { id } = req.params;
     try {
-      const targetUser = db.prepare('SELECT username FROM users WHERE id = ?').get(id) as any;
-      if (targetUser && (targetUser.username === 'admin' || targetUser.username === 'roby')) {
-        return res.status(403).json({ error: "No se permite eliminar la cuenta del administrador maestro." });
+      const targetUser = db.prepare('SELECT id, username FROM users WHERE id = ?').get(id) as any;
+      if (!targetUser) {
+        return res.status(404).json({ error: "El usuario a eliminar no existe." });
+      }
+
+      if (isMainAdmin(targetUser)) {
+        return res.status(403).json({ error: "Acceso denegado: El Administrador Principal es la pieza clave del sistema y no puede ser eliminado bajo ninguna circunstancia." });
       }
 
       const oldUser = db.prepare('SELECT id, username, role, email, permissions FROM users WHERE id = ?').get(id) as any;
@@ -705,12 +752,12 @@ async function startServer() {
           severity: 'critical',
           entityType: 'usuario',
           entityId: id,
-          entityName: targetUser ? targetUser.username : `Usuario #${id}`,
+          entityName: targetUser.username,
           userId: auditUser.userId,
           userName: auditUser.userName || 'admin',
           userRole: auditUser.userRole,
           affectedUserId: id,
-          affectedUserName: targetUser ? targetUser.username : `Usuario #${id}`,
+          affectedUserName: targetUser.username,
           reason: req.body?.reason || 'Eliminación de usuario desde el panel de administración',
           beforeData: oldUser ? { ...oldUser, permissions: JSON.parse(oldUser.permissions || "{}") } : null,
           status: 'success'

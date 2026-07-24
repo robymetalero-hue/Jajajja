@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAppContext, firestoreDb } from '../context/AppContext';
+import { isMainAdmin } from '../utils/permissions';
 import { collection, addDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { 
     Users, UserPlus, ShieldAlert, CheckSquare, Square, Save, 
@@ -237,6 +238,14 @@ export default function PermissionsConsole() {
     };
 
     const handleEditClick = (u: any) => {
+        const isTargetMainAdmin = isMainAdmin(u);
+        const isCurrentMainAdmin = isMainAdmin(user);
+
+        if (isTargetMainAdmin && !isCurrentMainAdmin) {
+            showNotification("El Administrador Principal solo puede ser editado por sí mismo.", "error");
+            return;
+        }
+
         setEditingUser(u);
         setUsername(u.username);
         setPassword(""); // Require re-typing password only if editing
@@ -250,15 +259,19 @@ export default function PermissionsConsole() {
         const loaded: Record<string, boolean> = {};
         ALL_PERMISSION_GROUPS.forEach(g => {
           g.items.forEach(item => {
-            loaded[item.key] = userPermissions[item.key] !== undefined 
+            loaded[item.key] = isTargetMainAdmin ? true : (userPermissions[item.key] !== undefined 
               ? !!userPermissions[item.key] 
-              : item.defaultValue;
+              : item.defaultValue);
           });
         });
         setPermissionsState(loaded);
     };
 
     const togglePermission = (key: string) => {
+      if (editingUser && isMainAdmin(editingUser)) {
+        showNotification("No se pueden alterar los permisos del Administrador Principal (Pieza Clave).", "error");
+        return;
+      }
       setPermissionsState(prev => ({
         ...prev,
         [key]: !prev[key]
@@ -421,6 +434,14 @@ export default function PermissionsConsole() {
                         )}
                     </div>
 
+                    {/* Fila 0: Cartel informativo para Administrador Principal */}
+                    {editingUser && isMainAdmin(editingUser) && (
+                        <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-3 text-amber-700 dark:text-amber-400 text-xs font-bold shadow-xs">
+                            <ShieldCheck className="shrink-0 text-amber-500" size={20} />
+                            <span>🔒 Cuenta de Administrador Principal (Pieza Clave): Esta cuenta posee el 100% de los privilegios del sistema de forma permanente e intocable. No es posible editar ni revocar sus funciones.</span>
+                        </div>
+                    )}
+
                     {/* Fila 1: Credenciales básicas */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="flex flex-col gap-1.5">
@@ -432,7 +453,7 @@ export default function PermissionsConsole() {
                                 placeholder="Ej: roby_vendedor"
                                 value={username}
                                 onChange={e => setUsername(e.target.value)}
-                                className="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-250 dark:border-slate-800 dark:bg-black/50 text-slate-850 dark:text-white focus:outline-none focus:border-indigo-500"
+                                className="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-250 dark:border-slate-800 dark:bg-black/50 text-slate-850 dark:text-white focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                             />
                         </div>
 
@@ -454,8 +475,9 @@ export default function PermissionsConsole() {
                             <label className="text-[9px] font-black uppercase tracking-widest text-slate-450">Rol Primario</label>
                             <select
                                 value={role}
+                                disabled={!!(editingUser && isMainAdmin(editingUser))}
                                 onChange={e => setRole(e.target.value as any)}
-                                className="w-full text-xs font-bold p-2.5 border border-slate-250 dark:border-slate-800 bg-white dark:bg-black/50 text-slate-850 dark:text-white rounded-xl focus:outline-none focus:border-indigo-500"
+                                className="w-full text-xs font-bold p-2.5 border border-slate-250 dark:border-slate-800 bg-white dark:bg-black/50 text-slate-850 dark:text-white rounded-xl focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                             >
                                 <option value="vendedor">Vendedor / Cajero (Mostrador)</option>
                                 <option value="admin">Administrador (Control Total)</option>
@@ -484,12 +506,15 @@ export default function PermissionsConsole() {
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   {group.items.map(item => {
-                                    const isChecked = !!permissionsState[item.key];
+                                    const isEditingMaster = editingUser && isMainAdmin(editingUser);
+                                    const isChecked = isEditingMaster ? true : !!permissionsState[item.key];
                                     return (
                                       <div 
                                         key={item.key} 
                                         onClick={() => togglePermission(item.key)}
-                                        className={`p-3 rounded-xl border flex items-start gap-3 transition cursor-pointer select-none hover:border-slate-350 dark:hover:border-slate-800 ${
+                                        className={`p-3 rounded-xl border flex items-start gap-3 transition select-none ${
+                                          isEditingMaster ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:border-slate-350 dark:hover:border-slate-800'
+                                        } ${
                                           isChecked 
                                             ? 'bg-indigo-500/5 border-indigo-500/20 text-slate-850 dark:text-white' 
                                             : 'bg-slate-50/20 border-slate-150 dark:bg-black/20 dark:border-slate-850/80 text-slate-500'
@@ -497,6 +522,7 @@ export default function PermissionsConsole() {
                                       >
                                         <button 
                                           type="button"
+                                          disabled={isEditingMaster}
                                           className={`w-4.5 h-4.5 rounded-md border flex items-center justify-center mt-0.5 transition shrink-0 ${
                                             isChecked 
                                               ? 'bg-indigo-600 border-indigo-600 text-white' 
@@ -539,29 +565,61 @@ export default function PermissionsConsole() {
 
                     <div className="flex flex-col gap-3 max-h-[62vh] overflow-y-auto">
                       {workers.map(w => {
-                        const isPrimaryAdmin = w.role === 'admin' || w.role === 'propietario';
+                        const isWorkerMainAdmin = isMainAdmin(w);
+                        const isCurrentMainAdmin = isMainAdmin(user);
+
                         return (
-                          <div key={w.id} className="p-3 bg-slate-50/50 dark:bg-black/20 rounded-xl border border-slate-150 dark:border-slate-850/80 flex justify-between items-center gap-2">
+                          <div key={w.id} className={`p-3 rounded-xl border flex justify-between items-center gap-2 transition ${
+                            isWorkerMainAdmin 
+                              ? 'bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/30' 
+                              : 'bg-slate-50/50 dark:bg-black/20 border-slate-150 dark:border-slate-850/80'
+                          }`}>
                             <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-slate-150 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 flex items-center justify-center font-black text-slate-700 dark:text-slate-350 uppercase text-xs">
+                              <div className={`w-8 h-8 rounded-full border flex items-center justify-center font-black uppercase text-xs ${
+                                isWorkerMainAdmin 
+                                  ? 'bg-amber-500 text-white border-amber-600' 
+                                  : 'bg-slate-150 dark:bg-slate-900 border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-350'
+                              }`}>
                                 {w.username.slice(0, 2)}
                               </div>
-                              <div>
-                                <span className="text-xs font-black uppercase text-slate-850 dark:text-white leading-none">{w.username}</span>
-                                <div className="text-[8px] font-black tracking-widest text-slate-400 uppercase mt-0.5">{w.role}</div>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-black uppercase text-slate-850 dark:text-white leading-none">{w.username}</span>
+                                  {isWorkerMainAdmin && (
+                                    <span className="py-0.5 px-1.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 font-black text-[7.5px] rounded-md border border-amber-500/30 uppercase tracking-widest flex items-center gap-1">
+                                      <Shield size={8} /> Principal
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[8px] font-black tracking-widest text-slate-400 uppercase mt-0.5">
+                                  {isWorkerMainAdmin ? 'ADMINISTRADOR MAESTRO (PIEZA CLAVE)' : w.role}
+                                </div>
                               </div>
                             </div>
 
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => handleEditClick(w)}
-                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-[#11192e] text-indigo-650 dark:text-indigo-400 rounded-lg transition cursor-pointer"
-                                title="Editar privilegios"
-                              >
-                                <Pencil size={12} />
-                              </button>
+                            <div className="flex gap-1 items-center">
+                              {/* Edit button */}
+                              {isWorkerMainAdmin && !isCurrentMainAdmin ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-lg opacity-60 cursor-not-allowed"
+                                  title="El Administrador Principal no puede ser editado por administradores secundarios."
+                                >
+                                  <Lock size={12} />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleEditClick(w)}
+                                  className="p-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-[#11192e] text-indigo-650 dark:text-indigo-400 rounded-lg transition cursor-pointer"
+                                  title="Editar privilegios"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                              )}
                               
-                              {w.id !== user?.id && (
+                              {/* Delete button: Main admin can NEVER be deleted */}
+                              {!isWorkerMainAdmin && w.id !== user?.id && (
                                 <>
                                   {deleteConfirmId === w.id ? (
                                     <div className="flex gap-1 animate-in slide-in-from-right-3 duration-150">

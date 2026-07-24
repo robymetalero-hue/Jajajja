@@ -106,11 +106,20 @@ export function normalizePermissions(rawPermissions: any): Record<string, boolea
 }
 
 /**
+ * Helper to identify the Main Administrator (master admin account).
+ */
+export function isMainAdmin(user: any): boolean {
+  if (!user) return false;
+  const username = String(user.username || '').toLowerCase().trim();
+  return username === 'admin' || username === 'roby' || Number(user.id) === 1;
+}
+
+/**
  * Helper to check if a user has a specific permission. Admins automatically have all permissions.
  */
 export function hasPermission(user: any, key: string): boolean {
   if (!user) return false;
-  if (user.role === 'admin') return true;
+  if (user.role === 'admin' || user.role === 'propietario' || isMainAdmin(user)) return true;
   
   const normalized = normalizePermissions(user.permissions);
   return !!normalized[key];
