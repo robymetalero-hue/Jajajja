@@ -245,6 +245,21 @@ export default function AuditoriaView() {
         }
     };
 
+    const exportToJSON = () => {
+        try {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(logs, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `reporte_seguridad_auditoria_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            document.body.removeChild(downloadAnchor);
+            showNotification('Reporte JSON de seguridad exportado correctamente', 'success');
+        } catch (e) {
+            showNotification('Error al exportar reporte JSON', 'error');
+        }
+    };
+
     // Helper to render parsed before/after comparisons dynamically inside modal
     const renderComparisonFields = (log: any) => {
         let before: any = null;
@@ -499,12 +514,80 @@ export default function AuditoriaView() {
                     
                     <button
                         onClick={exportToCSV}
-                        className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-black rounded-xl shadow-md border border-emerald-500/15 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 uppercase tracking-wide"
+                        className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-black rounded-xl shadow-md border border-emerald-500/15 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 uppercase tracking-wide"
+                        title="Exportar bitácora a formato CSV (Excel)"
                     >
                         <FileSpreadsheet size={13} />
                         CSV
                     </button>
+
+                    <button
+                        onClick={exportToJSON}
+                        className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-black rounded-xl shadow-md border border-slate-700/30 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 uppercase tracking-wide"
+                        title="Exportar reporte estructurado en formato JSON"
+                    >
+                        <Download size={13} />
+                        JSON
+                    </button>
                 </div>
+            </div>
+
+            {/* Quick Presets Bar for Security & Audit */}
+            <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-[#0c111e] p-2.5 rounded-2xl border border-slate-200/60 dark:border-slate-850/40 shadow-xs text-xs font-bold">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 px-2 flex items-center gap-1">
+                    <Filter size={11} className="text-indigo-500" /> Presets Rápidos:
+                </span>
+
+                <button
+                    onClick={() => {
+                        resetFilters();
+                        setSeverityFilter('critical');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-[11px] font-black ${
+                        severityFilter === 'critical' 
+                            ? 'bg-red-500/15 border-red-500/40 text-red-600 dark:text-red-400 shadow-xs' 
+                            : 'bg-slate-50 dark:bg-black/30 border-slate-200/60 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-red-400'
+                    }`}
+                >
+                    <ShieldAlert size={12} className="text-red-500" /> Eventos Críticos ({statsSummary.criticalLogsCount})
+                </button>
+
+                <button
+                    onClick={() => {
+                        resetFilters();
+                        setCategoryFilter('autenticacion');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-[11px] font-black ${
+                        categoryFilter === 'autenticacion' 
+                            ? 'bg-purple-500/15 border-purple-500/40 text-purple-600 dark:text-purple-400 shadow-xs' 
+                            : 'bg-slate-50 dark:bg-black/30 border-slate-200/60 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-purple-400'
+                    }`}
+                >
+                    <User size={12} className="text-purple-500" /> Seguridad & Accesos ({statsSummary.authLogsCount})
+                </button>
+
+                <button
+                    onClick={() => {
+                        resetFilters();
+                        setStatusFilter('failed');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-[11px] font-black ${
+                        statusFilter === 'failed' 
+                            ? 'bg-rose-500/15 border-rose-500/40 text-rose-600 dark:text-rose-400 shadow-xs' 
+                            : 'bg-slate-50 dark:bg-black/30 border-slate-200/60 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-rose-400'
+                    }`}
+                >
+                    <XCircle size={12} className="text-rose-500" /> Intentos Denegados / Fallos ({statsSummary.failedLogsCount})
+                </button>
+
+                {(severityFilter !== 'todos' || categoryFilter !== 'todos' || statusFilter !== 'todos' || userFilter !== 'todos' || searchTerm !== '') && (
+                    <button
+                        onClick={resetFilters}
+                        className="ml-auto px-3 py-1.5 bg-slate-150 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 text-[10.5px] font-extrabold uppercase tracking-wider"
+                    >
+                        <RefreshCw size={11} /> Limpiar Filtros
+                    </button>
+                )}
             </div>
 
             {/* General Tab */}
