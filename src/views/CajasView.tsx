@@ -131,11 +131,6 @@ export default function CajasView() {
   // Blind Cash Settlement States
   const [isBlindCashSettlement, setIsBlindCashSettlement] = useState<boolean>(true);
   const [showBlindResult, setShowBlindResult] = useState<boolean>(false);
-  const [showDenominationCalc, setShowDenominationCalc] = useState<boolean>(false);
-  const [denominations, setDenominations] = useState({
-    b200: 0, b100: 0, b50: 0, b20: 0, b10: 0,
-    m5: 0, m2: 0, m1: 0, m050: 0
-  });
 
   // Search & filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -222,8 +217,6 @@ export default function CajasView() {
     setSettleNotes('');
     setIsBlindCashSettlement(true);
     setShowBlindResult(false);
-    setShowDenominationCalc(false);
-    setDenominations({ b200: 0, b100: 0, b50: 0, b20: 0, b10: 0, m5: 0, m2: 0, m1: 0, m050: 0 });
     setIsSettleFormOpen(true);
   };
 
@@ -960,56 +953,6 @@ export default function CajasView() {
                   `${selectedAccount.current_balance.toFixed(2)} Bs.`
                 )}
               </span>
-            </div>
-
-            {/* Desglose por Billetes y Monedas (Calculadora Integrada) */}
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => setShowDenominationCalc(!showDenominationCalc)}
-                className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 flex items-center justify-between p-2.5 bg-slate-100/80 dark:bg-slate-850/80 rounded-xl hover:bg-slate-200 cursor-pointer transition"
-              >
-                <span>Calculadora de Billetes y Monedas (Conteo Físico)</span>
-                <span>{showDenominationCalc ? 'Ocultar ▲' : 'Desplegar ▼'}</span>
-              </button>
-
-              {showDenominationCalc && (
-                <div className="p-3 bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-slate-800 rounded-xl grid grid-cols-2 gap-2 text-xs">
-                  {[
-                    { key: 'b200', label: 'Billetes 200 Bs.', val: 200 },
-                    { key: 'b100', label: 'Billetes 100 Bs.', val: 100 },
-                    { key: 'b50', label: 'Billetes 50 Bs.', val: 50 },
-                    { key: 'b20', label: 'Billetes 20 Bs.', val: 20 },
-                    { key: 'b10', label: 'Billetes 10 Bs.', val: 10 },
-                    { key: 'm5', label: 'Monedas 5 Bs.', val: 5 },
-                    { key: 'm2', label: 'Monedas 2 Bs.', val: 2 },
-                    { key: 'm1', label: 'Monedas 1 Bs.', val: 1 },
-                    { key: 'm050', label: 'Monedas 0.50 Bs.', val: 0.5 }
-                  ].map(denom => (
-                    <div key={denom.key} className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] font-bold text-slate-500 uppercase">{denom.label}:</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={(denominations as any)[denom.key] || ''}
-                        onChange={e => {
-                          const count = Math.max(0, parseInt(e.target.value) || 0);
-                          const nextDenoms = { ...denominations, [denom.key]: count };
-                          setDenominations(nextDenoms);
-
-                          // Calculate total physical sum
-                          const sum = (nextDenoms.b200 * 200) + (nextDenoms.b100 * 100) + (nextDenoms.b50 * 50) +
-                                      (nextDenoms.b20 * 20) + (nextDenoms.b10 * 10) + (nextDenoms.m5 * 5) +
-                                      (nextDenoms.m2 * 2) + (nextDenoms.m1 * 1) + (nextDenoms.m050 * 0.5);
-                          setDeliveredAmount(sum > 0 ? sum.toFixed(2) : '');
-                        }}
-                        className="w-14 p-1 text-center font-mono font-bold text-xs border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-[#11192e]"
-                        placeholder="0"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Entrada del Monto Entregado */}
