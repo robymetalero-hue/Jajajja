@@ -348,6 +348,38 @@ try {
   db.exec("ALTER TABLE inventory_counts ADD COLUMN category_filter TEXT DEFAULT NULL");
 } catch (e: any) {}
 
+try {
+  db.exec("ALTER TABLE inventory_counts ADD COLUMN mode TEXT DEFAULT 'BLIND'");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE inventory_counts ADD COLUMN auditor_name TEXT DEFAULT NULL");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE inventory_counts ADD COLUMN store_name TEXT DEFAULT 'Almacén Principal'");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE inventory_counts ADD COLUMN override_segregation INTEGER DEFAULT 0");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE inventory_counts ADD COLUMN override_reason TEXT DEFAULT NULL");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE inventory_count_items ADD COLUMN expected_quantity_snapshot INTEGER DEFAULT 0");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE inventory_count_items ADD COLUMN movements_during_count INTEGER DEFAULT 0");
+} catch (e: any) {}
+
+try {
+  db.exec("ALTER TABLE inventory_count_items ADD COLUMN recount_requested INTEGER DEFAULT 0");
+} catch (e: any) {}
+
 // Create Cash Accounts & Movements & Settlements tables
 try {
   db.exec(`

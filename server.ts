@@ -4770,52 +4770,104 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
     }
   });
 
-  // --- NUEVOS ENDPOINTS: CONTROL FÍSICO DE INVENTARIO (PARTE 3) ---
+  // --- ENDPOINTS: CONTROL FÍSICO DE INVENTARIO Y AUDITORÍA A CIEGAS ---
 
   // Obtener todas las sesiones de conteo físico
   app.get("/api/inventory-counts", (req, res) => {
     try {
-      const counts = db.prepare('SELECT * FROM inventory_counts ORDER BY started_at DESC').all();
+      const userRole = req.headers['x-user-role'] || req.query.user_role;
+      const isAdmin = userRole === 'admin' || userRole === 'administrador';
+      let counts = db.prepare('SELECT * FROM inventory_counts ORDER BY started_at DESC').all() as any[];
+
+      if (!isAdmin) {
+        counts = counts.map(c => {
+          const { correct_products, difference_products, ...rest } = c;
+          return rest;
+        });
+      }
+
       res.json(counts);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  // Crear una nueva sesión de conteo físico (Copia el stock esperado actual)
+  // Crear una nueva sesión de conteo físico a ciegas (Copia el stock esperado como snapshot interno)
   app.post("/api/inventory-counts", (req, res) => {
-    const { user_id, username, notes, category_filter } = req.body;
+    const { 
+      user_id, 
+      username, 
+      auditor_name, 
+      store_name, 
+      notes, 
+      category_filter, 
+      mode, 
+      override_segregation, 
+      override_reason 
+    } = req.body;
+
     try {
-      const activeSession = db.prepare("SELECT id FROM inventory_counts WHERE status = 'en_progreso'").get() as any;
+      const activeSession = db.prepare("SELECT id FROM inventory_counts WHERE status IN ('en_progreso', 'pausado')").get() as any;
       if (activeSession) {
-        return res.status(400).json({ error: "Ya existe una sesión de conteo en progreso. Por favor, finalízala o paúsala antes de iniciar otra." });
+        return res.status(400).json({ error: `Ya existe una sesión de conteo activa (#${activeSession.id}). Por favor, finalízala o paúsala antes de iniciar otra.` });
+      }
+
+      const assignedAuditor = (auditor_name || username || 'Auditor').trim();
+      const store = (store_name || 'Almacén Principal').trim();
+
+      // --- VALIDACIÓN DE SEGREGACIÓN DE FUNCIONES ---
+      // Si el auditor es el operador principal del sistema/caja y no hay autorización explícita
+      const isOperatorSelfAuditing = (username && assignedAuditor.toLowerCase().includes(username.toLowerCase())) || assignedAuditor.toLowerCase().includes('cajero');
+      
+      if (isOperatorSelfAuditing && !override_segregation) {
+        return res.status(400).json({ 
+          segregation_warning: true,
+          error: "Advertencia de Segregación de Funciones: El auditor asignado es el operador principal de caja/almacén. Para autorizar una auto-auditoría, un Administrador o Propietario debe autorizar esta excepción con su justificación." 
+        });
       }
 
       let products: any[] = [];
       if (category_filter && category_filter !== 'Todos') {
-        products = db.prepare('SELECT id, name, sku, stock FROM products WHERE category = ?').all(category_filter) as any[];
+        products = db.prepare('SELECT id, name, sku, stock, category FROM products WHERE category = ?').all(category_filter) as any[];
       } else {
-        products = db.prepare('SELECT id, name, sku, stock FROM products').all() as any[];
+        products = db.prepare('SELECT id, name, sku, stock, category FROM products').all() as any[];
       }
 
       if (products.length === 0) {
-        return res.status(400).json({ error: "No hay productos disponibles para auditar." });
+        return res.status(400).json({ error: "No hay productos disponibles para auditar en el alcance seleccionado." });
       }
 
       const transaction = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO inventory_counts (user_id, username, notes, status, started_at, total_products, category_filter) 
-          VALUES (?, ?, ?, 'en_progreso', CURRENT_TIMESTAMP, ?, ?)
-        `).run(user_id || 1, username || 'admin', notes || 'Conteo físico', products.length, category_filter || null);
+          INSERT INTO inventory_counts (
+            user_id, username, auditor_name, store_name, notes, status, 
+            mode, override_segregation, override_reason, started_at, total_products, category_filter
+          ) 
+          VALUES (?, ?, ?, ?, ?, 'en_progreso', ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+        `).run(
+          user_id || 1, 
+          username || 'admin', 
+          assignedAuditor, 
+          store, 
+          notes || 'Control físico a ciegas', 
+          mode || 'BLIND', 
+          override_segregation ? 1 : 0, 
+          override_reason || null, 
+          products.length, 
+          category_filter || null
+        );
         
         const countId = result.lastInsertRowid;
         const insertItem = db.prepare(`
-          INSERT INTO inventory_count_items (inventory_count_id, product_id, product_name, product_sku, expected_quantity, physical_quantity, difference, status)
-          VALUES (?, ?, ?, ?, ?, ?, 0, 'pendiente')
+          INSERT INTO inventory_count_items (
+            inventory_count_id, product_id, product_name, product_sku, 
+            expected_quantity, expected_quantity_snapshot, physical_quantity, difference, status
+          )
+          VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'pendiente')
         `);
 
         for (const p of products) {
-          insertItem.run(countId, p.id, p.name, p.sku, p.stock, p.stock); // physical starts as expected
+          insertItem.run(countId, p.id, p.name, p.sku, p.stock, p.stock);
         }
 
         return countId;
@@ -4823,22 +4875,24 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
       const countId = transaction();
 
-      // Audit count start
+      // Audit log creation with segregation override tracking
       try {
         const auditUser = (req as any).auditUser || {};
         insertSystemAuditLog({
           eventType: 'INVENTORY_COUNT_STARTED',
           category: 'INVENTORY_COUNT',
-          module: 'KIOSKO_CHKLST',
-          action: 'Inicio de Conteo Físico',
-          severity: 'info',
+          module: 'CONTROL_FISICO',
+          action: 'Inicio de Conteo Físico a Ciegas',
+          severity: override_segregation ? 'WARNING' : 'INFO',
           entityType: 'conteo_fisico',
           entityId: countId,
-          entityName: `Sesión de control #${countId}`,
+          entityName: `Control Físico #${countId} (${store})`,
           userId: user_id || auditUser.userId || 1,
           userName: username || auditUser.userName || 'admin',
-          reason: notes || 'Conteo físico de inventario iniciado.',
-          afterData: { total_products: products.length, category_filter: category_filter || 'Todos' },
+          reason: override_segregation 
+            ? `Excepción de Segregación Autorizada: ${override_reason || 'Sin justificación'}`
+            : (notes || 'Conteo físico de inventario iniciado.'),
+          afterData: { total_products: products.length, store, auditor: assignedAuditor, mode: mode || 'BLIND', override_segregation: !!override_segregation },
           status: 'success'
         });
       } catch (auditErr: any) {
@@ -4852,16 +4906,78 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   });
 
   // Obtener los detalles de una sesión de conteo físico e ítems
+  // PROTECCIÓN DE AUDITORÍA A CIEGAS: Sanitiza los datos devueltos al auditor
   app.get("/api/inventory-counts/:id", (req, res) => {
     const { id } = req.params;
     try {
+      const userRole = req.headers['x-user-role'] || req.query.user_role;
+      const isAdmin = userRole === 'admin' || userRole === 'administrador';
+      const isAuditorView = req.query.is_auditor_view === 'true';
+
       const count = db.prepare('SELECT * FROM inventory_counts WHERE id = ?').get(id) as any;
       if (!count) {
         return res.status(404).json({ error: "Sesión de conteo no encontrada." });
       }
 
-      const items = db.prepare('SELECT * FROM inventory_count_items WHERE inventory_count_id = ?').all(id);
-      res.json({ ...count, items });
+      let items = db.prepare('SELECT * FROM inventory_count_items WHERE inventory_count_id = ?').all(id) as any[];
+
+      // Si la sesión está en progreso o si quien consulta es el auditor, OCULTAR el stock esperado del sistema y las diferencias
+      const hideSystemStock = (!isAdmin || isAuditorView) && count.status !== 'cerrado' && count.status !== 'finalizado' && count.status !== 'completado';
+
+      if (hideSystemStock) {
+        items = items.map((it: any) => ({
+          id: it.id,
+          inventory_count_id: it.inventory_count_id,
+          product_id: it.product_id,
+          product_name: it.product_name,
+          product_sku: it.product_sku,
+          physical_quantity: it.physical_quantity || 0,
+          notes: it.notes || '',
+          status: it.status === 'pendiente' ? 'pendiente' : 'contado',
+          recount_requested: it.recount_requested || 0
+        }));
+
+        const { correct_products, difference_products, ...sanitizedCount } = count;
+        return res.json({ ...sanitizedCount, items, is_blind_sanitized: true });
+      }
+
+      // Para Administradores / Propietarios en revisión:
+      // Calcular movimientos ocurridos durante el conteo entre started_at y completed_at (o la hora actual)
+      const endTime = count.completed_at || getBoliviaISOString();
+      const startTime = count.started_at;
+
+      items = items.map((it: any) => {
+        // Query movements from inventory_audit_logs during the audit window
+        let movementsSum = 0;
+        try {
+          const movsRow = db.prepare(`
+            SELECT 
+              COALESCE(SUM(CASE WHEN type IN ('ingreso_compra', 'ingreso_devolucion', 'ajuste_incremento') THEN quantity ELSE -quantity END), 0) as net_movements
+            FROM inventory_audit_logs
+            WHERE product_id = ? AND created_at >= ? AND created_at <= ?
+          `).get(it.product_id, startTime, endTime) as any;
+
+          movementsSum = movsRow ? movsRow.net_movements : 0;
+        } catch (mErr) {}
+
+        const snapshot = it.expected_quantity_snapshot !== undefined && it.expected_quantity_snapshot !== null
+          ? it.expected_quantity_snapshot 
+          : it.expected_quantity;
+
+        const adjustedExpected = snapshot + movementsSum;
+        const diff = (it.physical_quantity || 0) - adjustedExpected;
+
+        return {
+          ...it,
+          expected_quantity_snapshot: snapshot,
+          movements_during_count: movementsSum,
+          adjusted_expected_quantity: adjustedExpected,
+          difference: diff,
+          had_movements_during_count: movementsSum !== 0 ? 1 : 0
+        };
+      });
+
+      res.json({ ...count, items, is_blind_sanitized: false });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -4882,18 +4998,15 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         return res.status(404).json({ error: "Artículo de conteo no encontrado." });
       }
 
-      const expected = item.expected_quantity;
       const physical = Math.max(0, Number(physical_quantity));
+      const expected = item.expected_quantity;
       const difference = physical - expected;
       
-      let status = difference === 0 ? 'correcto' : 'diferencia';
-      if (bodyStatus) {
-        status = bodyStatus;
-      }
+      let status = bodyStatus || (difference === 0 ? 'correcto' : 'diferencia');
 
       db.prepare(`
         UPDATE inventory_count_items
-        SET physical_quantity = ?, difference = ?, status = ?, notes = ?, reviewed_at = CURRENT_TIMESTAMP
+        SET physical_quantity = ?, difference = ?, status = ?, notes = ?, recount_requested = 0, reviewed_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(physical, difference, status, notes || null, itemId);
 
@@ -4920,20 +5033,18 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         insertSystemAuditLog({
           eventType: 'INVENTORY_COUNT_ITEM_REVIEWED',
           category: 'INVENTORY_COUNT',
-          module: 'KIOSKO_CHKLST',
-          action: 'Revisión de Ítem de Conteo',
+          module: 'CONTROL_FISICO',
+          action: 'Conteo Físico Registrado',
           severity: 'info',
           entityType: 'producto',
           entityId: item.product_id,
           entityName: item.product_name,
           userId: auditUser.userId || 1,
-          userName: auditUser.userName || 'cajero',
-          userRole: auditUser.userRole || 'cajero',
-          quantityBefore: expected,
-          quantityChanged: difference,
+          userName: auditUser.userName || 'auditor',
+          userRole: auditUser.userRole || 'auditor',
           quantityAfter: physical,
-          reason: notes || `Cantidad encontrada: ${physical} (Esperada: ${expected})`,
-          afterData: { physical_quantity: physical, difference, status, notes },
+          reason: notes || `Cantidad física ingresada: ${physical}`,
+          afterData: { physical_quantity: physical, notes },
           relatedProductId: item.product_id,
           status: 'success'
         });
@@ -4941,7 +5052,40 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         console.warn("[Audit Error] Failed to log count item review:", auditErr.message);
       }
 
-      res.json({ success: true, difference, status });
+      res.json({ success: true, physical_quantity: physical, status });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Solicitar recuento de productos con discrepancia por el Administrador
+  app.post("/api/inventory-counts/:id/recount", (req, res) => {
+    const { id } = req.params;
+    const { item_ids, reason } = req.body;
+    try {
+      const count = db.prepare('SELECT id, status FROM inventory_counts WHERE id = ?').get(id) as any;
+      if (!count) {
+        return res.status(404).json({ error: "Sesión de conteo no encontrada." });
+      }
+
+      if (!item_ids || !Array.isArray(item_ids) || item_ids.length === 0) {
+        return res.status(400).json({ error: "Debe seleccionar al menos un producto para solicitar recuento." });
+      }
+
+      const stmt = db.prepare(`
+        UPDATE inventory_count_items
+        SET recount_requested = 1, status = 'requiere_revision', notes = COALESCE(notes || ' | ', '') || ?
+        WHERE id = ? AND inventory_count_id = ?
+      `);
+
+      for (const itemId of item_ids) {
+        stmt.run(`[Recuento Solicitado: ${reason || 'Verificar cantidad física'}]`, itemId, id);
+      }
+
+      // Reactivar sesión a 'en_progreso' para que el auditor pueda volver a contar esos items
+      db.prepare(`UPDATE inventory_counts SET status = 'en_progreso' WHERE id = ?`).run(id);
+
+      res.json({ success: true, message: `Recuento solicitado para ${item_ids.length} artículos.` });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

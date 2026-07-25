@@ -128,6 +128,15 @@ export default function CajasView() {
   const [adjustMethod, setAdjustMethod] = useState<string>('Efectivo');
   const [adjustNotes, setAdjustNotes] = useState<string>('');
 
+  // Blind Cash Settlement States
+  const [isBlindCashSettlement, setIsBlindCashSettlement] = useState<boolean>(true);
+  const [showBlindResult, setShowBlindResult] = useState<boolean>(false);
+  const [showDenominationCalc, setShowDenominationCalc] = useState<boolean>(false);
+  const [denominations, setDenominations] = useState({
+    b200: 0, b100: 0, b50: 0, b20: 0, b10: 0,
+    m5: 0, m2: 0, m1: 0, m050: 0
+  });
+
   // Search & filter
   const [searchTerm, setSearchTerm] = useState('');
   const [sellerFilter, setSellerFilter] = useState('all');
@@ -209,8 +218,12 @@ export default function CajasView() {
 
   const handleOpenSettle = () => {
     if (!selectedAccount) return;
-    setDeliveredAmount(selectedAccount.current_balance.toFixed(2));
+    setDeliveredAmount('');
     setSettleNotes('');
+    setIsBlindCashSettlement(true);
+    setShowBlindResult(false);
+    setShowDenominationCalc(false);
+    setDenominations({ b200: 0, b100: 0, b50: 0, b20: 0, b10: 0, m5: 0, m2: 0, m1: 0, m050: 0 });
     setIsSettleFormOpen(true);
   };
 
@@ -893,65 +906,190 @@ export default function CajasView() {
         </div>
       )}
 
-      {/* --- FORMULARIO DE LIQUIDACIÓN / RECUPERACIÓN DE DINERO (DIÁLOGO DE CORTE) --- */}
+      {/* --- FORMULARIO DE LIQUIDACIÓN / ARQUEO DE CAJA CIEGA --- */}
       {isSettleFormOpen && selectedAccount && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-[60] animate-in zoom-in-95 duration-200 select-none">
-          <div className="bg-white dark:bg-[#0f1424] rounded-2xl w-full max-w-md p-6 border border-slate-200 dark:border-slate-850 flex flex-col gap-4 shadow-2xl">
+          <div className="bg-white dark:bg-[#0f1424] rounded-2xl w-full max-w-lg p-6 border border-slate-200 dark:border-slate-850 flex flex-col gap-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850 pb-2.5">
-              <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-805 dark:text-white">Liquidar y archivar caja de {selectedAccount.seller_username}</h3>
-              <button onClick={() => setIsSettleFormOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-805 dark:text-white">
+                  Arqueo de Caja {isBlindCashSettlement ? 'a Ciegas' : ''}: {selectedAccount.seller_username}
+                </h3>
+                <span className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[8.5px] font-black uppercase px-2 py-0.5 rounded-md border border-indigo-500/20">
+                  {isBlindCashSettlement ? '🛡️ Ciega' : 'Transparente'}
+                </span>
+              </div>
+              <button onClick={() => setIsSettleFormOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer">
                 <X size={16} />
               </button>
             </div>
 
-            <p className="text-[10px] font-semibold text-slate-400 leading-normal">
-              Esta operación consolidará el periodo activo del vendedor y reiniciará su saldo de caja acumulativa a <strong>0.00 Bs.</strong> de forma irreversible.
-            </p>
-
-            <div className="bg-slate-50 dark:bg-black/20 p-3 rounded-xl border border-slate-100 dark:border-slate-850 text-center flex justify-between items-center">
-              <span className="text-[9px] uppercase font-black text-slate-400">Saldo Esperado en Sistema:</span>
-              <span className="text-base font-black font-mono text-slate-700 dark:text-white">{selectedAccount.current_balance.toFixed(2)} Bs.</span>
+            {/* Toggle Modo Ciego */}
+            <div className="flex items-center justify-between p-3 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+              <div>
+                <span className="text-xs font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-tight block">
+                  Modo Arqueo a Ciegas
+                </span>
+                <span className="text-[9.5px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                  Oculta el saldo esperado del sistema al cajero/auditor durante la entrega física.
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={isBlindCashSettlement}
+                  onChange={e => {
+                    setIsBlindCashSettlement(e.target.checked);
+                    setShowBlindResult(false);
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+              </label>
             </div>
 
+            {/* Saldo Esperado en Sistema (Oculto o Visible) */}
+            <div className="bg-slate-50 dark:bg-black/20 p-3.5 rounded-xl border border-slate-100 dark:border-slate-850 flex justify-between items-center">
+              <span className="text-[9.5px] uppercase font-black text-slate-400">Saldo Esperado en Sistema:</span>
+              <span className="text-base font-black font-mono text-slate-800 dark:text-white">
+                {isBlindCashSettlement && !showBlindResult ? (
+                  <span className="text-indigo-500 dark:text-indigo-400 font-bold text-xs uppercase tracking-widest bg-indigo-500/10 px-2 py-1 rounded">
+                    ***.** Bs. (Oculto a Ciegas)
+                  </span>
+                ) : (
+                  `${selectedAccount.current_balance.toFixed(2)} Bs.`
+                )}
+              </span>
+            </div>
+
+            {/* Desglose por Billetes y Monedas (Calculadora Integrada) */}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDenominationCalc(!showDenominationCalc)}
+                className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 flex items-center justify-between p-2.5 bg-slate-100/80 dark:bg-slate-850/80 rounded-xl hover:bg-slate-200 cursor-pointer transition"
+              >
+                <span>Calculadora de Billetes y Monedas (Conteo Físico)</span>
+                <span>{showDenominationCalc ? 'Ocultar ▲' : 'Desplegar ▼'}</span>
+              </button>
+
+              {showDenominationCalc && (
+                <div className="p-3 bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-slate-800 rounded-xl grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    { key: 'b200', label: 'Billetes 200 Bs.', val: 200 },
+                    { key: 'b100', label: 'Billetes 100 Bs.', val: 100 },
+                    { key: 'b50', label: 'Billetes 50 Bs.', val: 50 },
+                    { key: 'b20', label: 'Billetes 20 Bs.', val: 20 },
+                    { key: 'b10', label: 'Billetes 10 Bs.', val: 10 },
+                    { key: 'm5', label: 'Monedas 5 Bs.', val: 5 },
+                    { key: 'm2', label: 'Monedas 2 Bs.', val: 2 },
+                    { key: 'm1', label: 'Monedas 1 Bs.', val: 1 },
+                    { key: 'm050', label: 'Monedas 0.50 Bs.', val: 0.5 }
+                  ].map(denom => (
+                    <div key={denom.key} className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase">{denom.label}:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={(denominations as any)[denom.key] || ''}
+                        onChange={e => {
+                          const count = Math.max(0, parseInt(e.target.value) || 0);
+                          const nextDenoms = { ...denominations, [denom.key]: count };
+                          setDenominations(nextDenoms);
+
+                          // Calculate total physical sum
+                          const sum = (nextDenoms.b200 * 200) + (nextDenoms.b100 * 100) + (nextDenoms.b50 * 50) +
+                                      (nextDenoms.b20 * 20) + (nextDenoms.b10 * 10) + (nextDenoms.m5 * 5) +
+                                      (nextDenoms.m2 * 2) + (nextDenoms.m1 * 1) + (nextDenoms.m050 * 0.5);
+                          setDeliveredAmount(sum > 0 ? sum.toFixed(2) : '');
+                        }}
+                        className="w-14 p-1 text-center font-mono font-bold text-xs border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-[#11192e]"
+                        placeholder="0"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Entrada del Monto Entregado */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-[9px] font-extrabold uppercase tracking-widest text-slate-450 pl-1">Monto Entregado Físicamente (Bs.)</label>
+              <label className="text-[9px] font-extrabold uppercase tracking-widest text-slate-450 pl-1">
+                Monto Entregado Físicamente en Caja (Bs.)
+              </label>
               <input 
                 type="number"
                 step="0.01"
-                className="w-full text-sm font-bold font-mono p-2.5 rounded-xl border border-slate-250 dark:border-slate-800 dark:bg-black/50 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
-                placeholder="Monto entregado"
+                className="w-full text-base font-extrabold font-mono p-3 rounded-xl border border-slate-250 dark:border-slate-800 dark:bg-black/50 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                placeholder="Ingresa el monto total contado..."
                 value={deliveredAmount}
-                onChange={e => setDeliveredAmount(e.target.value)}
+                onChange={e => {
+                  setDeliveredAmount(e.target.value);
+                  setShowBlindResult(false);
+                }}
               />
-              {deliveredAmount && !isNaN(parseFloat(deliveredAmount)) && (
-                <div className="text-[9.5px] font-bold flex justify-between pl-1">
-                  <span className="text-slate-450 uppercase">Diferencia calculada:</span>
-                  <span className={parseFloat(deliveredAmount) - selectedAccount.current_balance === 0 ? 'text-emerald-500' : 'text-rose-500 font-extrabold'}>
-                    {(parseFloat(deliveredAmount) - selectedAccount.current_balance).toFixed(2)} Bs.
+
+              {/* Resultado de Discrepancia si se reveló o si está en modo transparente */}
+              {deliveredAmount && !isNaN(parseFloat(deliveredAmount)) && (!isBlindCashSettlement || showBlindResult) && (
+                <div className="p-3 bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-slate-800 rounded-xl flex justify-between items-center text-xs font-bold mt-1">
+                  <span className="text-slate-500 uppercase text-[10px]">Diferencia de Arqueo:</span>
+                  <span className={`font-mono text-sm font-black ${
+                    parseFloat(deliveredAmount) - selectedAccount.current_balance === 0 
+                      ? 'text-emerald-500' 
+                      : parseFloat(deliveredAmount) - selectedAccount.current_balance > 0 
+                        ? 'text-indigo-500' 
+                        : 'text-rose-500'
+                  }`}>
+                    {(parseFloat(deliveredAmount) - selectedAccount.current_balance) === 0
+                      ? '✓ Sin Discrepancia (0.00 Bs.)'
+                      : (parseFloat(deliveredAmount) - selectedAccount.current_balance) > 0
+                        ? `+${(parseFloat(deliveredAmount) - selectedAccount.current_balance).toFixed(2)} Bs. (Sobrante)`
+                        : `${(parseFloat(deliveredAmount) - selectedAccount.current_balance).toFixed(2)} Bs. (Faltante)`
+                    }
                   </span>
                 </div>
               )}
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[9px] font-extrabold uppercase tracking-widest text-slate-450 pl-1">Observaciones / Notas de Balance</label>
+              <label className="text-[9px] font-extrabold uppercase tracking-widest text-slate-450 pl-1">Observaciones / Notas del Arqueo</label>
               <textarea 
                 rows={2}
                 className="w-full text-xs font-semibold p-2.5 rounded-xl border border-slate-250 dark:border-slate-800 dark:bg-black/50 text-slate-850 dark:text-white focus:outline-none focus:border-indigo-500"
-                placeholder="Ej: Entregado conforme, sin faltantes."
+                placeholder="Ej. Arqueo a ciegas sin novedades, billetes en sobre sellado #412."
                 value={settleNotes}
                 onChange={e => setSettleNotes(e.target.value)}
               />
             </div>
 
-            <div className="flex justify-end gap-3 mt-2">
+            {/* Acciones */}
+            <div className="flex justify-end gap-2.5 mt-2">
               <button 
+                type="button"
                 onClick={() => setIsSettleFormOpen(false)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 font-bold text-xs uppercase cursor-pointer"
+                className="px-4 py-2.5 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 font-bold text-xs uppercase cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-850 transition"
               >
                 Cancelar
               </button>
+
+              {isBlindCashSettlement && !showBlindResult && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!deliveredAmount || isNaN(parseFloat(deliveredAmount))) {
+                      showNotification?.("Ingresa primero la cantidad física contada.", "error");
+                      return;
+                    }
+                    setShowBlindResult(true);
+                  }}
+                  className="px-4 py-2.5 bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-extrabold text-xs rounded-xl cursor-pointer uppercase transition hover:bg-amber-500/20"
+                >
+                  Revelar Discrepancia
+                </button>
+              )}
+
               <button 
+                type="button"
                 onClick={handleConfirmSettle}
                 className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer uppercase transition"
               >
