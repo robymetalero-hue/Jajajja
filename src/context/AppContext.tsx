@@ -976,12 +976,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updateCartItemQuantity = (productId: number, qty: number) => {
         setCart(prev => {
-            if (qty <= 0) {
-                return prev.filter(item => item.id !== productId);
-            }
             return prev.map(item => {
                 if (item.id === productId) {
-                    let finalQty = qty;
+                    let finalQty = isNaN(qty) ? 0 : Math.max(0, qty);
                     if (finalQty > item.stock) {
                         finalQty = item.stock;
                         setTimeout(() => {
