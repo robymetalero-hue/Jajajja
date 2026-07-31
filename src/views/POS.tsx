@@ -2144,7 +2144,8 @@ export default function POS() {
                                                         type="text" 
                                                         inputMode="numeric" 
                                                         pattern="[0-9]*"
-                                                        className="w-8 h-6 text-center font-mono text-[11px] font-black bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-white pointer-events-auto"
+                                                        className="min-w-[36px] max-w-[130px] h-6 px-1 text-center font-mono text-[11px] font-black bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-white pointer-events-auto transition-all"
+                                                        style={{ width: `${Math.max(2.5, ((item.cartQuantity || '').toString().length || 1) * 0.65 + 0.8)}rem` }}
                                                         value={item.cartQuantity || ''} 
                                                         onFocus={(e) => {
                                                             const target = e.target;
@@ -2730,7 +2731,7 @@ export default function POS() {
                                                     </button>
                                                 ) : null}
 
-                                                <span className={`text-sm sm:text-[10px] font-mono font-extrabold px-1 text-center w-8 sm:w-5 select-none ${qtyInCart > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-705'}`}>
+                                                <span className={`text-sm sm:text-[10px] font-mono font-extrabold px-1 text-center min-w-[28px] sm:min-w-[20px] w-auto select-none ${qtyInCart > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-705'}`}>
                                                     {qtyInCart}
                                                 </span>
 
