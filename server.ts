@@ -5482,11 +5482,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const status = difference === 0 ? 'confirmada' : 'con_diferencia';
 
       const saleIds = pendingMovements.filter(m => m.sale_id).map(m => m.sale_id);
+      const updatedMovementIds = pendingMovements.map(m => m.id);
       const startPeriod = sellerAcc.last_settlement_at || (pendingMovements.length > 0 ? pendingMovements[pendingMovements.length - 1].created_at : new Date().toISOString());
 
+      let settlementId: number | bigint = 0;
       const transaction = db.transaction(() => {
         // Create settlement log
-        db.prepare(`
+        const resSet = db.prepare(`
           INSERT INTO cash_settlements 
           (seller_id, seller_username, admin_id, admin_username, period_start, period_end, calculated_amount, delivered_amount, difference, notes, sale_ids, status, created_at)
           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -5503,6 +5505,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           JSON.stringify(saleIds),
           status
         );
+        settlementId = resSet.lastInsertRowid;
 
         // Update movements to liquidado
         db.prepare("UPDATE cash_movements SET status = 'liquidado' WHERE seller_id = ? AND status = 'pendiente'").run(sellerId);
@@ -5516,7 +5519,12 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       });
 
       transaction();
-      syncAfterWrite(["cash_accounts", "cash_movements", "cash_settlements"]);
+
+      syncAfterWrite({
+        cash_accounts: [sellerAcc.id],
+        cash_movements: updatedMovementIds,
+        cash_settlements: [settlementId]
+      });
 
       // Get current exchange rate for audit log
       const rateRow = db.prepare("SELECT value FROM settings WHERE key = 'exchange_rate'").get() as any;

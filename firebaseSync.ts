@@ -146,7 +146,6 @@ export const APPEND_ONLY_TABLES = [
   'accounts_receivable',
   'credit_payments',
   'pending_sale_payments',
-  'cash_movements',
   'cash_settlements',
   'inventory_audit_logs',
   'system_audit_logs',
