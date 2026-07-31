@@ -4209,14 +4209,45 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   // REST API: Dashboard & KPIs
   app.get("/api/dashboard", (req, res) => {
     try {
-      const { startDate, endDate, compare } = req.query as { startDate?: string; endDate?: string; compare?: string };
+      const { startDate, endDate, compare, sellerId, paymentMethod: paymentMethodParam } = req.query as { 
+        startDate?: string; 
+        endDate?: string; 
+        compare?: string;
+        sellerId?: string;
+        paymentMethod?: string;
+      };
       const doCompare = compare === 'true';
+
+      // 1. Fetch seller accounts list for filter
+      const sellers = db.prepare("SELECT id, username, name, role FROM users").all();
+
+      // Helper for dynamic WHERE conditions on sales 's' table
+      const buildSalesWhere = (start?: string, end?: string, prefix = 's') => {
+        const conditions: string[] = [];
+        const params: any[] = [];
+
+        if (start && end) {
+          conditions.push(`date(${prefix}.created_at) >= date(?) AND date(${prefix}.created_at) <= date(?)`);
+          params.push(start, end);
+        }
+
+        if (sellerId && sellerId !== 'all') {
+          conditions.push(`${prefix}.user_id = ?`);
+          params.push(Number(sellerId));
+        }
+
+        if (paymentMethodParam && paymentMethodParam !== 'all') {
+          conditions.push(`${prefix}.payment_method = ?`);
+          params.push(paymentMethodParam);
+        }
+
+        const whereSql = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+        return { whereSql, params };
+      };
 
       const todaySales = db.prepare("SELECT COALESCE(SUM(total), 0) as total FROM sales WHERE date(created_at) = date('now')").get() as any;
       const lowStock = db.prepare("SELECT * FROM products WHERE stock <= stock_alarm").all();
       
-      // Calculate real-time profit for today. 
-      // si.price is in Bs, si.cost is in USD (or p.price_cost as fallback), converted via s.exchange_rate snapshot stored at time of sale.
       const todayProfit = db.prepare(`
         SELECT COALESCE(SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))), 0) as profit
         FROM sale_items si
@@ -4225,35 +4256,102 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         WHERE date(s.created_at) = date('now')
       `).get() as any;
 
-      // Best selling products - optionally filtered by period
-      let topProducts;
+      // 2. Compute Period Summary (KPIs Pro)
+      const currentWhere = buildSalesWhere(startDate, endDate, 's');
+      
+      const periodSalesRow = db.prepare(`
+        SELECT 
+          COALESCE(SUM(s.total), 0) as total_sales,
+          COUNT(DISTINCT s.id) as total_tx
+        FROM sales s
+        ${currentWhere.whereSql}
+      `).get(...currentWhere.params) as any;
+
+      const periodProfitRow = db.prepare(`
+        SELECT 
+          COALESCE(SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))), 0) as total_profit,
+          COALESCE(SUM(si.quantity), 0) as total_items
+        FROM sale_items si
+        JOIN sales s ON s.id = si.sale_id
+        JOIN products p ON p.id = si.product_id
+        ${currentWhere.whereSql}
+      `).get(...currentWhere.params) as any;
+
+      const totalSales = Number(periodSalesRow?.total_sales || 0);
+      const totalTx = Number(periodSalesRow?.total_tx || 0);
+      const totalProfit = Number(periodProfitRow?.total_profit || 0);
+      const totalItems = Number(periodProfitRow?.total_items || 0);
+
+      const avgTicket = totalTx > 0 ? totalSales / totalTx : 0;
+      const avgItemsPerTicket = totalTx > 0 ? totalItems / totalTx : 0;
+      const profitMarginPct = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
+
+      // 3. Compute Previous Period for Growth Comparative
+      let prevPeriodSales = 0;
+      let prevPeriodProfit = 0;
+      let prevPeriodTx = 0;
+      let growthSalesPct = 0;
+      let growthProfitPct = 0;
+      let growthTxPct = 0;
+
       if (startDate && endDate) {
-        topProducts = db.prepare(`
-          SELECT p.name, SUM(si.quantity) as total_qty 
-          FROM sale_items si 
-          JOIN products p ON p.id = si.product_id 
+        const s1 = new Date(startDate + 'T12:00:00');
+        const e1 = new Date(endDate + 'T12:00:00');
+        const diffTime = Math.abs(e1.getTime() - s1.getTime());
+        const diffDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+        
+        const s2 = new Date(s1);
+        s2.setDate(s2.getDate() - diffDays);
+        const e2 = new Date(s1);
+        e2.setDate(e2.getDate() - 1);
+        
+        const startDatePrev = s2.toISOString().split('T')[0];
+        const endDatePrev = e2.toISOString().split('T')[0];
+
+        const prevWhere = buildSalesWhere(startDatePrev, endDatePrev, 's');
+        const prevSalesRow = db.prepare(`
+          SELECT 
+            COALESCE(SUM(s.total), 0) as total_sales,
+            COUNT(DISTINCT s.id) as total_tx
+          FROM sales s
+          ${prevWhere.whereSql}
+        `).get(...prevWhere.params) as any;
+
+        const prevProfitRow = db.prepare(`
+          SELECT COALESCE(SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))), 0) as total_profit
+          FROM sale_items si
           JOIN sales s ON s.id = si.sale_id
-          WHERE date(s.created_at) >= date(?) AND date(s.created_at) <= date(?)
-          GROUP BY p.id 
-          ORDER BY total_qty DESC 
-          LIMIT 5
-        `).all(startDate, endDate);
-      } else {
-        topProducts = db.prepare(`
-          SELECT p.name, SUM(si.quantity) as total_qty 
-          FROM sale_items si 
-          JOIN products p ON p.id = si.product_id 
-          GROUP BY p.id 
-          ORDER BY total_qty DESC 
-          LIMIT 5
-        `).all();
+          JOIN products p ON p.id = si.product_id
+          ${prevWhere.whereSql}
+        `).get(...prevWhere.params) as any;
+
+        prevPeriodSales = Number(prevSalesRow?.total_sales || 0);
+        prevPeriodProfit = Number(prevProfitRow?.total_profit || 0);
+        prevPeriodTx = Number(prevSalesRow?.total_tx || 0);
+
+        growthSalesPct = prevPeriodSales > 0 ? ((totalSales - prevPeriodSales) / prevPeriodSales) * 100 : (totalSales > 0 ? 100 : 0);
+        growthProfitPct = prevPeriodProfit > 0 ? ((totalProfit - prevPeriodProfit) / prevPeriodProfit) * 100 : (totalProfit > 0 ? 100 : 0);
+        growthTxPct = prevPeriodTx > 0 ? ((totalTx - prevPeriodTx) / prevPeriodTx) * 100 : (totalTx > 0 ? 100 : 0);
       }
+
+      // Best selling products - filtered by period and seller/payment
+      let topProducts;
+      topProducts = db.prepare(`
+        SELECT p.id, p.name, p.sku, SUM(si.quantity) as total_qty, SUM(si.quantity * si.price) as total_revenue,
+               SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as total_profit
+        FROM sale_items si 
+        JOIN products p ON p.id = si.product_id 
+        JOIN sales s ON s.id = si.sale_id
+        ${currentWhere.whereSql}
+        GROUP BY p.id 
+        ORDER BY total_qty DESC 
+        LIMIT 6
+      `).all(...currentWhere.params);
 
       // Sales Trend (comparative revenue and profit data)
       let salesTrend;
       if (startDate && endDate) {
         if (doCompare) {
-          // Helper to generate sequential days cleanly without timezone shift
           const getDatesArray = (startStr: string, endStr: string) => {
             const dates: string[] = [];
             const start = new Date(startStr + 'T12:00:00');
@@ -4266,7 +4364,6 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             return dates;
           };
 
-          // 1. Calculate previous period dates
           const s1 = new Date(startDate + 'T12:00:00');
           const e1 = new Date(endDate + 'T12:00:00');
           const diffTime = Math.abs(e1.getTime() - s1.getTime());
@@ -4280,7 +4377,8 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           const startDatePrev = s2.toISOString().split('T')[0];
           const endDatePrev = e2.toISOString().split('T')[0];
 
-          // 2. Fetch current period daily totals
+          const currWhereSales = buildSalesWhere(startDate, endDate, 'sales');
+          const currWhereItems = buildSalesWhere(startDate, endDate, 's');
           const currentData = db.prepare(`
             SELECT 
               t.label,
@@ -4289,7 +4387,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             FROM (
               SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
               FROM sales
-              WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)
+              ${currWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
@@ -4298,13 +4396,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
               JOIN products p ON p.id = si.product_id
-              WHERE date(s.created_at) >= date(?) AND date(s.created_at) <= date(?)
+              ${currWhereItems.whereSql}
               GROUP BY label
             ) p_info ON t.label = p_info.label
             ORDER BY t.label ASC
-          `).all(startDate, endDate, startDate, endDate) as any[];
+          `).all(...currWhereSales.params, ...currWhereItems.params) as any[];
 
-          // 3. Fetch previous period daily totals
+          const prevWhereSales = buildSalesWhere(startDatePrev, endDatePrev, 'sales');
+          const prevWhereItems = buildSalesWhere(startDatePrev, endDatePrev, 's');
           const prevData = db.prepare(`
             SELECT 
               t.label,
@@ -4313,7 +4412,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             FROM (
               SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
               FROM sales
-              WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)
+              ${prevWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
@@ -4322,37 +4421,35 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
               JOIN products p ON p.id = si.product_id
-              WHERE date(s.created_at) >= date(?) AND date(s.created_at) <= date(?)
+              ${prevWhereItems.whereSql}
               GROUP BY label
             ) p_info ON t.label = p_info.label
             ORDER BY t.label ASC
-          `).all(startDatePrev, endDatePrev, startDatePrev, endDatePrev) as any[];
+          `).all(...prevWhereSales.params, ...prevWhereItems.params) as any[];
 
-          // 4. Generate all sequential days in both ranges
           const currentDays = getDatesArray(startDate, endDate);
           const prevDays = getDatesArray(startDatePrev, endDatePrev);
 
-          // Build index maps for fast lookup
           const currentMap = new Map(currentData.map(d => [d.label, d]));
           const prevMap = new Map(prevData.map(d => [d.label, d]));
 
-          // Synthesize merged array
           salesTrend = currentDays.map((currDay, idx) => {
             const currEntry = currentMap.get(currDay);
             const prevDay = prevDays[idx] || '';
             const prevEntry = prevMap.get(prevDay);
 
             return {
-              label: currDay, // current label for x-axis
+              label: currDay,
               total: currEntry ? currEntry.total : 0,
               profit: currEntry ? currEntry.profit : 0,
-              compareLabel: prevDay, // previous date for tooltip reference
+              compareLabel: prevDay,
               compareTotal: prevEntry ? prevEntry.total : 0,
               compareProfit: prevEntry ? prevEntry.profit : 0
             };
           });
         } else {
-          // Standard range (no comparison)
+          const currWhereSales = buildSalesWhere(startDate, endDate, 'sales');
+          const currWhereItems = buildSalesWhere(startDate, endDate, 's');
           salesTrend = db.prepare(`
             SELECT 
               t.label,
@@ -4361,7 +4458,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             FROM (
               SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
               FROM sales
-              WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)
+              ${currWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
@@ -4370,13 +4467,15 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
               JOIN products p ON p.id = si.product_id
-              WHERE date(s.created_at) >= date(?) AND date(s.created_at) <= date(?)
+              ${currWhereItems.whereSql}
               GROUP BY label
             ) p_info ON t.label = p_info.label
             ORDER BY t.label ASC
-          `).all(startDate, endDate, startDate, endDate);
+          `).all(...currWhereSales.params, ...currWhereItems.params);
         }
       } else {
+        const currWhereSales = buildSalesWhere(undefined, undefined, 'sales');
+        const currWhereItems = buildSalesWhere(undefined, undefined, 's');
         salesTrend = db.prepare(`
           SELECT 
             t.label,
@@ -4385,6 +4484,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           FROM (
             SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
             FROM sales
+            ${currWhereSales.whereSql}
             GROUP BY label
           ) t
           LEFT JOIN (
@@ -4393,52 +4493,65 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             FROM sale_items si
             JOIN sales s ON s.id = si.sale_id
             JOIN products p ON p.id = si.product_id
+            ${currWhereItems.whereSql}
             GROUP BY label
           ) p_info ON t.label = p_info.label
           GROUP BY t.label
           ORDER BY t.label DESC
           LIMIT 7
-        `).all().reverse();
+        `).all(...currWhereSales.params, ...currWhereItems.params).reverse();
       }
 
-      // Payment distribution - optionally filtered by period
-      let paymentDistribution;
-      if (startDate && endDate) {
-        paymentDistribution = db.prepare(`
-          SELECT payment_method as name, COALESCE(SUM(total), 0) as value 
-          FROM sales 
-          WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)
-          GROUP BY payment_method
-        `).all(startDate, endDate);
-      } else {
-        paymentDistribution = db.prepare(`
-          SELECT payment_method as name, COALESCE(SUM(total), 0) as value 
-          FROM sales 
-          GROUP BY payment_method
-        `).all();
-      }
+      // Payment distribution
+      const paymentWhere = buildSalesWhere(startDate, endDate, 'sales');
+      const paymentDistribution = db.prepare(`
+        SELECT payment_method as name, COALESCE(SUM(total), 0) as value, COUNT(id) as count
+        FROM sales 
+        ${paymentWhere.whereSql}
+        GROUP BY payment_method
+      `).all(...paymentWhere.params);
 
-      let hourlySales;
-      if (startDate && endDate) {
-        hourlySales = db.prepare(`
-          SELECT strftime('%H', created_at) as hour, SUM(total) as total
-          FROM sales
-          WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)
-          GROUP BY hour
-          ORDER BY hour ASC
-        `).all(startDate, endDate);
-      } else {
-        hourlySales = db.prepare(`
-          SELECT strftime('%H', created_at) as hour, SUM(total) as total
-          FROM sales
-          GROUP BY hour
-          ORDER BY hour ASC
-        `).all();
-      }
+      // Full 24-hour hourly distribution with sales amount and transaction count
+      const hourlyWhere = buildSalesWhere(startDate, endDate, 's');
+      const rawHourly = db.prepare(`
+        SELECT strftime('%H', s.created_at) as hour, SUM(s.total) as total, COUNT(s.id) as tx_count
+        FROM sales s
+        ${hourlyWhere.whereSql}
+        GROUP BY hour
+        ORDER BY hour ASC
+      `).all(...hourlyWhere.params) as any[];
+
+      const rawHourlyMap = new Map(rawHourly.map(h => [h.hour, h]));
+      const hourlySales = Array.from({ length: 24 }, (_, i) => {
+        const hourStr = i.toString().padStart(2, '0');
+        const found = rawHourlyMap.get(hourStr);
+        return {
+          hour: hourStr,
+          label: `${i}:00`,
+          total: found ? Number(found.total || 0) : 0,
+          count: found ? Number(found.tx_count || 0) : 0
+        };
+      });
 
       res.json({
         salesToday: todaySales.total,
         profitToday: todayProfit.profit,
+        sellers,
+        periodSummary: {
+          totalSales,
+          totalProfit,
+          totalTx,
+          totalItems,
+          avgTicket,
+          avgItemsPerTicket,
+          profitMarginPct,
+          prevPeriodSales,
+          prevPeriodProfit,
+          prevPeriodTx,
+          growthSalesPct,
+          growthProfitPct,
+          growthTxPct
+        },
         lowStock,
         topProducts,
         salesTrend,

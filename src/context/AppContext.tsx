@@ -91,7 +91,14 @@ interface AppContextType {
     addToCart: (product: Product, quantity?: number) => void;
     updateCartItemQuantity: (productId: number, qty: number) => void;
     removeFromCart: (productId: number) => void;
-    clearCart: () => void;
+    clearCart: (isCompletedSale?: boolean) => void;
+    lastClearedCart: CartItem[] | null;
+    lastClearedMeta: any;
+    cartBackup: CartItem[] | null;
+    cartBackupMeta: any;
+    restoreLastClearedCart: () => boolean;
+    restoreCartBackup: () => boolean;
+    discardCartBackup: () => void;
     updateCartItemPrice: (productId: number, priceType: 'unit' | 'bulk' | 'custom', customPrice?: number) => void;
     products: Product[];
     clients: Client[];
@@ -231,6 +238,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const fetchWithRetry = async (url: string, options?: RequestInit, retries = 3, delay = 800): Promise<Response> => {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            throw new Error('Offline mode - network is disconnected');
+        }
         try {
             const response = await fetch(url, options);
             if (!response.ok) {
@@ -238,6 +248,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             return response;
         } catch (error) {
+            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                throw new Error('Offline mode - network is disconnected');
+            }
             if (retries > 0) {
                 console.warn(`[Sync Retry] Fetch to ${url} failed. Retrying in ${delay}ms... (${retries} retries left)`);
                 await new Promise((resolve) => setTimeout(resolve, delay));
@@ -415,6 +428,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [discountType, setDiscountType] = useState<'monto' | 'porcentaje'>(() => initialTab.discountType || 'monto');
     const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia' | 'Crédito'>(() => initialTab.paymentMethod || 'Efectivo');
     const [cart, setCart] = useState<CartItem[]>(() => initialTab.cart || []);
+
+    // Safety recall & recovery buffer states
+    const [lastClearedCart, setLastClearedCart] = useState<CartItem[] | null>(() => {
+        try {
+            const saved = localStorage.getItem('gtr_pos_last_cleared_cart');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed.cart) && parsed.cart.length > 0) return parsed.cart;
+            }
+        } catch {}
+        return null;
+    });
+
+    const [lastClearedMeta, setLastClearedMeta] = useState<any>(() => {
+        try {
+            const saved = localStorage.getItem('gtr_pos_last_cleared_cart');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return {
+                    clientName: parsed.clientName,
+                    clientPhone: parsed.clientPhone,
+                    discount: parsed.discount,
+                    discountType: parsed.discountType,
+                    paymentMethod: parsed.paymentMethod,
+                    timestamp: parsed.timestamp
+                };
+            }
+        } catch {}
+        return null;
+    });
+
+    const [cartBackup, setCartBackup] = useState<CartItem[] | null>(() => {
+        try {
+            const saved = localStorage.getItem('gtr_pos_active_cart_backup');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed.cart) && parsed.cart.length > 0) return parsed.cart;
+            }
+        } catch {}
+        return null;
+    });
+
+    const [cartBackupMeta, setCartBackupMeta] = useState<any>(() => {
+        try {
+            const saved = localStorage.getItem('gtr_pos_active_cart_backup');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return {
+                    clientName: parsed.clientName,
+                    clientPhone: parsed.clientPhone,
+                    discount: parsed.discount,
+                    discountType: parsed.discountType,
+                    paymentMethod: parsed.paymentMethod,
+                    timestamp: parsed.timestamp
+                };
+            }
+        } catch {}
+        return null;
+    });
+
+    // Auto-save rolling backup whenever active cart has items
+    useEffect(() => {
+        if (cart.length > 0) {
+            try {
+                const payload = {
+                    cart,
+                    clientName,
+                    clientPhone,
+                    discount,
+                    discountType,
+                    paymentMethod,
+                    activeTabId,
+                    timestamp: new Date().toISOString()
+                };
+                localStorage.setItem('gtr_pos_active_cart_backup', JSON.stringify(payload));
+            } catch (e) {
+                console.error("Failed saving active cart safety backup:", e);
+            }
+        }
+    }, [cart, clientName, clientPhone, discount, discountType, paymentMethod, activeTabId]);
 
     // Sync tabs list and active ID to localStorage and IndexedDB
     useEffect(() => {
@@ -998,7 +1091,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCart(prev => prev.filter(item => item.id !== productId));
     };
 
-    const clearCart = () => setCart([]);
+    const clearCart = (isCompletedSale = false) => {
+        if (!isCompletedSale && cart.length > 0) {
+            const payload = {
+                cart: [...cart],
+                clientName,
+                clientPhone,
+                discount,
+                discountType,
+                paymentMethod,
+                timestamp: new Date().toISOString()
+            };
+            setLastClearedCart([...cart]);
+            setLastClearedMeta(payload);
+            try {
+                localStorage.setItem('gtr_pos_last_cleared_cart', JSON.stringify(payload));
+            } catch (e) {
+                console.error("Failed saving last cleared cart:", e);
+            }
+        } else if (isCompletedSale) {
+            setLastClearedCart(null);
+            setLastClearedMeta(null);
+            setCartBackup(null);
+            setCartBackupMeta(null);
+            localStorage.removeItem('gtr_pos_last_cleared_cart');
+            localStorage.removeItem('gtr_pos_active_cart_backup');
+        }
+        setCart([]);
+    };
+
+    const restoreLastClearedCart = (): boolean => {
+        if (!lastClearedCart || lastClearedCart.length === 0) return false;
+        setCart([...lastClearedCart]);
+        if (lastClearedMeta) {
+            if (lastClearedMeta.clientName) setClientName(lastClearedMeta.clientName);
+            if (lastClearedMeta.clientPhone) setClientPhone(lastClearedMeta.clientPhone);
+            if (lastClearedMeta.discount !== undefined) setDiscount(lastClearedMeta.discount);
+            if (lastClearedMeta.discountType) setDiscountType(lastClearedMeta.discountType);
+            if (lastClearedMeta.paymentMethod) setPaymentMethod(lastClearedMeta.paymentMethod);
+        }
+        setLastClearedCart(null);
+        setLastClearedMeta(null);
+        localStorage.removeItem('gtr_pos_last_cleared_cart');
+        return true;
+    };
+
+    const restoreCartBackup = (): boolean => {
+        if (!cartBackup || cartBackup.length === 0) return false;
+        setCart([...cartBackup]);
+        if (cartBackupMeta) {
+            if (cartBackupMeta.clientName) setClientName(cartBackupMeta.clientName);
+            if (cartBackupMeta.clientPhone) setClientPhone(cartBackupMeta.clientPhone);
+            if (cartBackupMeta.discount !== undefined) setDiscount(cartBackupMeta.discount);
+            if (cartBackupMeta.discountType) setDiscountType(cartBackupMeta.discountType);
+            if (cartBackupMeta.paymentMethod) setPaymentMethod(cartBackupMeta.paymentMethod);
+        }
+        setCartBackup(null);
+        setCartBackupMeta(null);
+        localStorage.removeItem('gtr_pos_active_cart_backup');
+        return true;
+    };
+
+    const discardCartBackup = () => {
+        setLastClearedCart(null);
+        setLastClearedMeta(null);
+        setCartBackup(null);
+        setCartBackupMeta(null);
+        localStorage.removeItem('gtr_pos_last_cleared_cart');
+        localStorage.removeItem('gtr_pos_active_cart_backup');
+    };
 
     const updateCartItemPrice = (productId: number, priceType: 'unit' | 'bulk' | 'custom', customPrice?: number) => {
         setCart(prev => prev.map(item => {
@@ -1280,6 +1441,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updateCartItemQuantity,
             removeFromCart,
             clearCart,
+            lastClearedCart,
+            lastClearedMeta,
+            cartBackup,
+            cartBackupMeta,
+            restoreLastClearedCart,
+            restoreCartBackup,
+            discardCartBackup,
             updateCartItemPrice,
             products,
             clients,

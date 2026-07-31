@@ -6,7 +6,8 @@ import {
     ShoppingCart, Plus, Minus, Trash2, Printer, Search, UserCheck, 
     AlertTriangle, CreditCard, DollarSign, Camera, X, ClipboardCheck,
     Coins, HelpCircle, ChevronRight, ChevronDown, ShoppingBag, Grid, List, LayoutGrid,
-    CheckCircle2, ArrowLeftRight, QrCode, History, Eye, Star, FileText, Sparkles, Download, Check, Clock, Truck, Lock, Loader2
+    CheckCircle2, ArrowLeftRight, QrCode, History, Eye, Star, FileText, Sparkles, Download, Check, Clock, Truck, Lock, Loader2,
+    RotateCcw, ShieldAlert
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
@@ -38,7 +39,7 @@ const triggerVibrate = (pattern: number | number[] = 40) => {
 export default function POS() {
     const { 
         products, fetchProducts, cart, addToCart: rawAddToCart, updateCartItemQuantity: rawUpdateCartItemQuantity, 
-        removeFromCart, clearCart, updateCartItemPrice, user, kioskMode, exchangeRate, 
+        removeFromCart, clearCart, lastClearedCart, cartBackup, restoreLastClearedCart, restoreCartBackup, discardCartBackup, updateCartItemPrice, user, kioskMode, exchangeRate, 
         roundBs, receiptTemplate, clients, fetchClients,
         tabs, setTabs, activeTabId, setActiveTabId,
         clientName, setClientName, clientPhone, setClientPhone,
@@ -685,7 +686,7 @@ export default function POS() {
                     items
                 };
                 await saveOfflineAction('create_pending_sale', '/api/pending-sales', 'POST', payload);
-                clearCart();
+                clearCart(true);
                 setPendingClientName("");
                 setPendingDestination("");
                 setPendingClientPhone("");
@@ -710,7 +711,7 @@ export default function POS() {
             });
             
             if (res.ok) {
-                clearCart();
+                clearCart(true);
                 setPendingClientName("");
                 setPendingDestination("");
                 setPendingClientPhone("");
@@ -1361,7 +1362,7 @@ export default function POS() {
                         destination: creditDestination
                     });
 
-                    clearCart();
+                    clearCart(true);
                     setDiscount(0);
                     setClientName("");
                     setClientPhone("");
@@ -1428,7 +1429,7 @@ export default function POS() {
                         destination: creditDestination
                     });
 
-                    clearCart();
+                    clearCart(true);
                     setDiscount(0);
                     setClientName("");
                     setClientPhone("");
@@ -1880,9 +1881,28 @@ export default function POS() {
                             <span>Scanner</span>
                         </button>
                         
+                        {(lastClearedCart || cartBackup) && cart.length === 0 && (
+                            <button 
+                                onClick={() => {
+                                    if (lastClearedCart) {
+                                        restoreLastClearedCart();
+                                        if (showNotification) showNotification("¡Carrito restaurado con éxito!", "success");
+                                    } else if (cartBackup) {
+                                        restoreCartBackup();
+                                        if (showNotification) showNotification("¡Carrito de la sesión anterior recuperado!", "success");
+                                    }
+                                }} 
+                                className="text-[10px] text-amber-600 dark:text-amber-400 hover:text-amber-700 font-extrabold uppercase tracking-wide transition cursor-pointer mr-2 shrink-0 flex items-center gap-1 animate-pulse"
+                                title="Rescatar productos borrados o no guardados"
+                            >
+                                <RotateCcw size={11} />
+                                <span>Rescatar Carrito</span>
+                            </button>
+                        )}
+
                         {cart.length > 0 && (
                             <button 
-                                onClick={clearCart} 
+                                onClick={() => clearCart(false)} 
                                 className="text-[10px] text-rose-500 hover:text-rose-600 font-extrabold uppercase tracking-wide transition cursor-pointer mr-2 shrink-0"
                             >
                                 Vaciar Todo
@@ -1934,6 +1954,79 @@ export default function POS() {
                     style={cartScroll.style}
                     {...cartScroll.touchHandlers}
                 >
+                    {/* Cart Safety Recall / Accidental Clear Alert */}
+                    {lastClearedCart && lastClearedCart.length > 0 && cart.length === 0 && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center justify-between gap-2.5 shadow-xs animate-fade-in">
+                            <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 text-xs">
+                                <div className="p-1.5 bg-amber-200/60 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 rounded-xl shrink-0">
+                                    <RotateCcw size={15} />
+                                </div>
+                                <div>
+                                    <span className="font-extrabold block text-[11px] leading-tight text-amber-900 dark:text-amber-200">¿Vaciado por error?</span>
+                                    <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">
+                                        Se borraron {lastClearedCart.reduce((acc, item) => acc + (item.cartQuantity || 1), 0)} unidades ({lastClearedCart.length} ítems).
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                    onClick={() => {
+                                        if (restoreLastClearedCart()) {
+                                            if (showNotification) showNotification("¡Carrito restaurado con éxito!", "success");
+                                        }
+                                    }}
+                                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black text-[10px] uppercase rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1"
+                                >
+                                    <RotateCcw size={11} />
+                                    Restaurar
+                                </button>
+                                <button
+                                    onClick={discardCartBackup}
+                                    className="p-1 text-amber-700 dark:text-amber-300 hover:bg-amber-200/50 dark:hover:bg-amber-900/50 rounded-lg transition cursor-pointer"
+                                    title="Descartar"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Session Expiration / Accidental Tab Refresh Backup Alert */}
+                    {!lastClearedCart && cartBackup && cartBackup.length > 0 && cart.length === 0 && (
+                        <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl flex items-center justify-between gap-2.5 shadow-xs animate-fade-in">
+                            <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 text-xs">
+                                <div className="p-1.5 bg-indigo-200/60 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-xl shrink-0">
+                                    <ShieldAlert size={15} />
+                                </div>
+                                <div>
+                                    <span className="font-extrabold block text-[11px] leading-tight text-indigo-900 dark:text-indigo-200">Rescate de Sesión Previa</span>
+                                    <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-semibold">
+                                        Carrito guardado de {cartBackup.reduce((acc, item) => acc + (item.cartQuantity || 1), 0)} unidades recuperable.
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                    onClick={() => {
+                                        if (restoreCartBackup()) {
+                                            if (showNotification) showNotification("¡Carrito de la sesión anterior recuperado!", "success");
+                                        }
+                                    }}
+                                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-[10px] uppercase rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1"
+                                >
+                                    <RotateCcw size={11} />
+                                    Recuperar
+                                </button>
+                                <button
+                                    onClick={discardCartBackup}
+                                    className="p-1 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200/50 dark:hover:bg-indigo-900/50 rounded-lg transition cursor-pointer"
+                                    title="Descartar"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <AnimatePresence initial={false} >
                         {cart.map(item => {
                             const isCustom = item.price_type === 'custom';

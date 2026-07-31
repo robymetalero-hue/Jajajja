@@ -62,6 +62,9 @@ Date.prototype.toISOString = function () {
   return originalToISOString.call(boliviaTime);
 };
 
+let cachedUserStr: string | null = null;
+let cachedUserObj: any = null;
+
 const originalFetch = window.fetch;
 try {
   Object.defineProperty(window, 'fetch', {
@@ -74,12 +77,15 @@ try {
       } else if (input && typeof input === 'object' && 'url' in input) {
         url = (input as any).url;
       }
-
       if (!url.startsWith('http') || url.startsWith(window.location.origin)) {
         const userJson = localStorage.getItem('user');
         if (userJson) {
           try {
-            const user = JSON.parse(userJson);
+            if (userJson !== cachedUserStr) {
+                cachedUserStr = userJson;
+                cachedUserObj = JSON.parse(userJson);
+            }
+            const user = cachedUserObj;
             if (user) {
               init = init || {};
               const headersObj: Record<string, string> = {};
@@ -98,7 +104,6 @@ try {
                   });
                 }
               }
-
               if (!headersObj['x-user-id'] && user.id) {
                 headersObj['x-user-id'] = String(user.id);
               }
