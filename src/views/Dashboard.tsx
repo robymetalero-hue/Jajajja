@@ -30,14 +30,21 @@ export default function Dashboard() {
     const [sellerId, setSellerId] = useState<string>('all');
     const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
     
-    const [dateRange, setDateRange] = useState<DateRange>({
-        startDate: (() => {
-            const prior = new Date();
-            prior.setDate(prior.getDate() - 6);
-            return prior.toISOString().split('T')[0];
-        })(),
-        endDate: new Date().toISOString().split('T')[0],
-        preset: '7days'
+    const [dateRange, setDateRange] = useState<DateRange>(() => {
+        const today = new Date();
+        const formatDate = (d: Date) => {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        };
+        const prior = new Date();
+        prior.setDate(today.getDate() - 6);
+        return {
+            startDate: formatDate(prior),
+            endDate: formatDate(today),
+            preset: '7days'
+        };
     });
 
     const [stats, setStats] = useState({
@@ -181,47 +188,6 @@ export default function Dashboard() {
         };
     }, [user]);
 
-    const handleShiftReset = async () => {
-        if (user?.role !== 'admin') {
-            showNotification("No tienes permisos suficientes para realizar esta acción.", "error");
-            return;
-        }
-
-        const confirmReset = window.confirm(
-            "⚠️ TURN RESET: ¿Deseas realizar el Cierre de Turno y Caja?\n\nEsta acción registrará históricamente la suma obtenida y pondrá a cero ($0.00) las ventas actuales correspondientes a este periodo de trabajo."
-        );
-        if (!confirmReset) return;
-
-        try {
-            const res = await fetch('/api/shifts/reset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ closed_by: user.id })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                showNotification(`✓ Cierre de turno exitoso. Total archivado: Bs. ${data.totalClosed.toFixed(2)}. Ventas de caja reiniciadas.`, "success");
-                loadStats();
-                fetchProducts();
-                try {
-                    showNotification("Iniciando respaldo en Google Drive...", "success");
-                    const backupSuccess = await backupDatabaseToDrive();
-                    if (backupSuccess) {
-                        showNotification("✓ Respaldo subido exitosamente a Google Drive.", "success");
-                    }
-                } catch (err: any) {
-                    console.error("Backup to Drive failed:", err);
-                    showNotification("El respaldo en Google Drive falló: " + err.message, "error");
-                }
-            } else {
-                showNotification("Ocurrió un error al procesar el cierre.", "error");
-            }
-        } catch (e) {
-            console.error(e);
-            showNotification("Imposible procesar el cierre en este momento.", "error");
-        }
-    };
-
     // Calculate peak sales hour
     const peakHour = React.useMemo(() => {
         if (!stats.hourlySales || stats.hourlySales.length === 0) return null;
@@ -277,17 +243,6 @@ export default function Dashboard() {
                     >
                         <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
                     </button>
-
-                    {/* Cierre de Turno Button */}
-                    {user?.role === 'admin' && (
-                        <button
-                            onClick={handleShiftReset}
-                            className="px-3 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-95 text-white text-[11px] font-extrabold rounded-2xl shadow-sm transition flex items-center gap-1.5 cursor-pointer shrink-0"
-                        >
-                            <ShieldAlert size={14} />
-                            <span>Cierre de Turno</span>
-                        </button>
-                    )}
                 </div>
             </div>
 

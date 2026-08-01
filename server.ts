@@ -4227,8 +4227,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         const params: any[] = [];
 
         if (start && end) {
-          conditions.push(`date(${prefix}.created_at) >= date(?) AND date(${prefix}.created_at) <= date(?)`);
+          conditions.push(`substr(${prefix}.created_at, 1, 10) >= ? AND substr(${prefix}.created_at, 1, 10) <= ?`);
           params.push(start, end);
+        } else if (start) {
+          conditions.push(`substr(${prefix}.created_at, 1, 10) >= ?`);
+          params.push(start);
+        } else if (end) {
+          conditions.push(`substr(${prefix}.created_at, 1, 10) <= ?`);
+          params.push(end);
         }
 
         if (sellerId && sellerId !== 'all') {
@@ -4237,7 +4243,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         }
 
         if (paymentMethodParam && paymentMethodParam !== 'all') {
-          conditions.push(`${prefix}.payment_method = ?`);
+          conditions.push(`LOWER(${prefix}.payment_method) = LOWER(?)`);
           params.push(paymentMethodParam);
         }
 
@@ -4245,7 +4251,8 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         return { whereSql, params };
       };
 
-      const todaySales = db.prepare("SELECT COALESCE(SUM(total), 0) as total FROM sales WHERE date(created_at) = date('now')").get() as any;
+      const todayStr = getBoliviaISOString().substring(0, 10);
+      const todaySales = db.prepare("SELECT COALESCE(SUM(total), 0) as total FROM sales WHERE substr(created_at, 1, 10) = ?").get(todayStr) as any;
       const lowStock = db.prepare("SELECT * FROM products WHERE stock <= stock_alarm").all();
       
       const todayProfit = db.prepare(`
@@ -4253,8 +4260,8 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         FROM sale_items si
         JOIN sales s ON s.id = si.sale_id
         JOIN products p ON p.id = si.product_id
-        WHERE date(s.created_at) = date('now')
-      `).get() as any;
+        WHERE substr(s.created_at, 1, 10) = ?
+      `).get(todayStr) as any;
 
       // 2. Compute Period Summary (KPIs Pro)
       const currentWhere = buildSalesWhere(startDate, endDate, 's');
@@ -4385,13 +4392,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               CAST(t.total AS REAL) as total,
               CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
             FROM (
-              SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
+              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
               FROM sales
               ${currWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
-              SELECT strftime('%Y-%m-%d', s.created_at) as label,
+              SELECT substr(s.created_at, 1, 10) as label,
                      SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
@@ -4410,13 +4417,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               CAST(t.total AS REAL) as total,
               CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
             FROM (
-              SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
+              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
               FROM sales
               ${prevWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
-              SELECT strftime('%Y-%m-%d', s.created_at) as label,
+              SELECT substr(s.created_at, 1, 10) as label,
                      SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
@@ -4456,13 +4463,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               CAST(t.total AS REAL) as total,
               CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
             FROM (
-              SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
+              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
               FROM sales
               ${currWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
-              SELECT strftime('%Y-%m-%d', s.created_at) as label,
+              SELECT substr(s.created_at, 1, 10) as label,
                      SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
@@ -4482,13 +4489,13 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             CAST(t.total AS REAL) as total,
             CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
           FROM (
-            SELECT strftime('%Y-%m-%d', created_at) as label, COALESCE(SUM(total), 0) as total
+            SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
             FROM sales
             ${currWhereSales.whereSql}
             GROUP BY label
           ) t
           LEFT JOIN (
-            SELECT strftime('%Y-%m-%d', s.created_at) as label,
+            SELECT substr(s.created_at, 1, 10) as label,
                    SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
             FROM sale_items si
             JOIN sales s ON s.id = si.sale_id
@@ -4497,9 +4504,8 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             GROUP BY label
           ) p_info ON t.label = p_info.label
           GROUP BY t.label
-          ORDER BY t.label DESC
-          LIMIT 7
-        `).all(...currWhereSales.params, ...currWhereItems.params).reverse();
+          ORDER BY t.label ASC
+        `).all(...currWhereSales.params, ...currWhereItems.params);
       }
 
       // Payment distribution

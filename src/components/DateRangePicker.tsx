@@ -25,15 +25,19 @@ export default function DateRangePicker({ value, onChange, className = '' }: Dat
         { id: '7days', name: 'Últimos 7 Días' },
         { id: '30days', name: 'Últimos 30 Días' },
         { id: 'thisMonth', name: 'Este Mes' },
+        { id: 'thisYear', name: 'Este Año' },
         { id: 'custom', name: 'Personalizado' },
     ];
 
     const getPresetDates = (presetId: string): { start: string; end: string } => {
         const today = new Date();
-        const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
-        const dd = String(today.getDate()).padStart(2, '0');
-        const todayStr = `${yyyy}-${mm}-${dd}`;
+        const formatDate = (d: Date) => {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        };
+        const todayStr = formatDate(today);
 
         if (presetId === 'all') {
             return { start: '', end: '' };
@@ -42,20 +46,18 @@ export default function DateRangePicker({ value, onChange, className = '' }: Dat
         } else if (presetId === '7days') {
             const prior = new Date();
             prior.setDate(today.getDate() - 6);
-            const py = prior.getFullYear();
-            const pm = String(prior.getMonth() + 1).padStart(2, '0');
-            const pd = String(prior.getDate()).padStart(2, '0');
-            return { start: `${py}-${pm}-${pd}`, end: todayStr };
+            return { start: formatDate(prior), end: todayStr };
         } else if (presetId === '30days') {
             const prior = new Date();
             prior.setDate(today.getDate() - 29);
-            const py = prior.getFullYear();
-            const pm = String(prior.getMonth() + 1).padStart(2, '0');
-            const pd = String(prior.getDate()).padStart(2, '0');
-            return { start: `${py}-${pm}-${pd}`, end: todayStr };
+            return { start: formatDate(prior), end: todayStr };
         } else if (presetId === 'thisMonth') {
-            const firstDay = `${yyyy}-${mm}-01`;
-            return { start: firstDay, end: todayStr };
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            return { start: `${yyyy}-${mm}-01`, end: todayStr };
+        } else if (presetId === 'thisYear') {
+            const yyyy = today.getFullYear();
+            return { start: `${yyyy}-01-01`, end: todayStr };
         }
         return { start: value.startDate, end: value.endDate };
     };
