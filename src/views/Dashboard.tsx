@@ -49,6 +49,32 @@ export default function Dashboard() {
 
     const [periodType, setPeriodType] = useState<'day' | 'week' | 'month' | 'year'>('day');
 
+    const [stats, setStats] = useState({
+        salesToday: 0,
+        profitToday: 0,
+        sellers: [] as any[],
+        periodSummary: {
+            totalSales: 0,
+            totalProfit: 0,
+            totalTx: 0,
+            totalItems: 0,
+            avgTicket: 0,
+            avgItemsPerTicket: 0,
+            profitMarginPct: 0,
+            prevPeriodSales: 0,
+            prevPeriodProfit: 0,
+            prevPeriodTx: 0,
+            growthSalesPct: 0,
+            growthProfitPct: 0,
+            growthTxPct: 0
+        },
+        lowStock: [] as any[],
+        topProducts: [] as any[],
+        salesTrend: [] as any[],
+        paymentDistribution: [] as any[],
+        hourlySales: [] as any[]
+    });
+
     const groupedSalesTrend = React.useMemo(() => {
         if (!stats.salesTrend) return [];
         if (periodType === 'day') return stats.salesTrend;
@@ -87,32 +113,6 @@ export default function Dashboard() {
         });
         return Array.from(grouped.values());
     }, [stats.salesTrend, periodType]);
-
-    const [stats, setStats] = useState({
-        salesToday: 0,
-        profitToday: 0,
-        sellers: [] as any[],
-        periodSummary: {
-            totalSales: 0,
-            totalProfit: 0,
-            totalTx: 0,
-            totalItems: 0,
-            avgTicket: 0,
-            avgItemsPerTicket: 0,
-            profitMarginPct: 0,
-            prevPeriodSales: 0,
-            prevPeriodProfit: 0,
-            prevPeriodTx: 0,
-            growthSalesPct: 0,
-            growthProfitPct: 0,
-            growthTxPct: 0
-        },
-        lowStock: [] as any[],
-        topProducts: [] as any[],
-        salesTrend: [] as any[],
-        paymentDistribution: [] as any[],
-        hourlySales: [] as any[]
-    });
 
     const [loading, setLoading] = useState(true);
     const [insights, setInsights] = useState<any[]>([]);
