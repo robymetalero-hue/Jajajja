@@ -47,6 +47,47 @@ export default function Dashboard() {
         };
     });
 
+    const [periodType, setPeriodType] = useState<'day' | 'week' | 'month' | 'year'>('day');
+
+    const groupedSalesTrend = React.useMemo(() => {
+        if (!stats.salesTrend) return [];
+        if (periodType === 'day') return stats.salesTrend;
+
+        const grouped = new Map();
+        stats.salesTrend.forEach((item: any) => {
+            const date = new Date(item.label + 'T12:00:00');
+            let key = item.label;
+            
+            if (periodType === 'week') {
+                const firstDay = new Date(date);
+                firstDay.setDate(date.getDate() - date.getDay());
+                key = firstDay.toISOString().split('T')[0] + ' (Sem)';
+            } else if (periodType === 'month') {
+                key = item.label.substring(0, 7); // YYYY-MM
+            } else if (periodType === 'year') {
+                key = item.label.substring(0, 4); // YYYY
+            }
+
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    label: key,
+                    total: 0,
+                    profit: 0,
+                    compareLabel: '',
+                    compareTotal: 0,
+                    compareProfit: 0
+                });
+            }
+            const g = grouped.get(key);
+            g.total += item.total || 0;
+            g.profit += item.profit || 0;
+            g.compareTotal += item.compareTotal || 0;
+            g.compareProfit += item.compareProfit || 0;
+            if (item.compareLabel) g.compareLabel = item.compareLabel;
+        });
+        return Array.from(grouped.values());
+    }, [stats.salesTrend, periodType]);
+
     const [stats, setStats] = useState({
         salesToday: 0,
         profitToday: 0,
@@ -268,6 +309,21 @@ export default function Dashboard() {
                                     {s.name || s.username} ({s.role})
                                 </option>
                             ))}
+                        </select>
+                    </div>
+
+                    {/* Period Selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 px-3 py-1.5 rounded-xl">
+                        <Clock size={13} className="text-slate-400" />
+                        <select
+                            value={periodType}
+                            onChange={(e) => setPeriodType(e.target.value as any)}
+                            className="bg-transparent text-xs font-extrabold text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+                        >
+                            <option value="day">Por Día</option>
+                            <option value="week">Por Semana</option>
+                            <option value="month">Por Mes</option>
+                            <option value="year">Por Año</option>
                         </select>
                     </div>
 
@@ -515,10 +571,10 @@ export default function Dashboard() {
                             <div className="h-full w-full bg-slate-100 dark:bg-slate-900/50 rounded-2xl animate-pulse flex items-center justify-center text-xs text-slate-400">
                                 Cargando gráfico...
                             </div>
-                        ) : stats.salesTrend && stats.salesTrend.length > 0 ? (
+                        ) : groupedSalesTrend && groupedSalesTrend.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 {chartType === 'area' ? (
-                                    <AreaChart data={stats.salesTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                    <AreaChart data={groupedSalesTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                         <defs>
                                             <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
                                                 <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
@@ -553,7 +609,7 @@ export default function Dashboard() {
                                         )}
                                     </AreaChart>
                                 ) : chartType === 'bar' ? (
-                                    <BarChart data={stats.salesTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                    <BarChart data={groupedSalesTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.15} />
                                         <XAxis dataKey="label" stroke="#94a3b8" fontSize={10} tickLine={false} />
                                         <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} tickFormatter={(v) => `Bs.${v}`} />
@@ -574,7 +630,7 @@ export default function Dashboard() {
                                         )}
                                     </BarChart>
                                 ) : (
-                                    <LineChart data={stats.salesTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                    <LineChart data={groupedSalesTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.15} />
                                         <XAxis dataKey="label" stroke="#94a3b8" fontSize={10} tickLine={false} />
                                         <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} tickFormatter={(v) => `Bs.${v}`} />

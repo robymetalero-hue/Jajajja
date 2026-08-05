@@ -632,19 +632,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const roundBs = (amount: number): number => {
-        const roundedToTwo = Math.round(amount * 100) / 100;
-        const integerPart = Math.floor(roundedToTwo);
-        const decimalPart = Math.round((roundedToTwo - integerPart) * 100) / 100;
-        
-        if (decimalPart === 0) {
-            return integerPart;
-        } else if (decimalPart > 0 && decimalPart < 0.5) {
-            return integerPart + 0.50;
-        } else if (decimalPart === 0.5) {
-            return integerPart + 0.50;
-        } else {
-            return integerPart + 1.00;
-        }
+        return Math.round(amount * 2) / 2;
     };
 
     const fetchExchangeRate = async () => {

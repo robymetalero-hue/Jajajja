@@ -1184,7 +1184,7 @@ export default function POS() {
         if (!item) return 0;
         const rate = exchangeRate || 6.96;
         if (item.price_type === 'custom' && item.custom_price !== undefined && item.custom_price !== null) {
-            return Math.round((Number(item.custom_price) || 0) * rate * 100) / 100;
+            return roundBs((Number(item.custom_price) || 0) * rate);
         }
         return roundBs(getCartItemPriceUSD(item) * rate);
     };
@@ -1322,7 +1322,7 @@ export default function POS() {
                 payment_method: methodToUse,
                 user_id: user?.id || 1,
                 client_id: clientId,
-                items: cart.map(c => ({
+                items: cart.filter(c => c.cartQuantity > 0).map(c => ({
                     product_id: c.id,
                     quantity: c.cartQuantity,
                     price: checkoutCurrency === 'USD' ? getCartItemPriceUSD(c) : getCartItemPriceBs(c)
@@ -2166,52 +2166,45 @@ export default function POS() {
                                                 </span>
                                             </div>
 
-                                            {/* Quick Pricing Presets Toggles */}
-                                            {hasPermission(user, 'modify_prices') ? (
-                                                <div className="flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-md border border-slate-200/50 dark:border-slate-800/40 w-fit mt-0.5">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setLocalPriceInputs(prev => {
-                                                                const copy = { ...prev };
-                                                                delete copy[item.id];
-                                                                return copy;
-                                                            });
-                                                            updateCartItemPrice(item.id, 'unit');
-                                                        }}
-                                                        className={`px-1.5 py-0.5 rounded text-[7.5px] font-black uppercase transition cursor-pointer ${
-                                                            (!item.price_type || item.price_type === 'unit')
-                                                                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                                                        }`}
-                                                    >
-                                                        Detalle
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setLocalPriceInputs(prev => {
-                                                                const copy = { ...prev };
-                                                                delete copy[item.id];
-                                                                return copy;
-                                                            });
-                                                            updateCartItemPrice(item.id, 'bulk');
-                                                        }}
-                                                        className={`px-1.5 py-0.5 rounded text-[7.5px] font-black uppercase transition cursor-pointer ${
-                                                            item.price_type === 'bulk'
-                                                                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                                                        }`}
-                                                    >
-                                                        X Mayor
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-1 text-[7.5px] text-slate-400 dark:text-slate-500 font-mono font-bold select-none mt-0.5">
-                                                    <Lock size={8} className="shrink-0" />
-                                                    <span>Precios Bloqueados</span>
-                                                </div>
-                                            )}
+                                            {/* Quick Pricing Presets Toggles (Detalle / X Mayor) */}
+                                            <div className="flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-md border border-slate-200/50 dark:border-slate-800/40 w-fit mt-0.5">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setLocalPriceInputs(prev => {
+                                                            const copy = { ...prev };
+                                                            delete copy[item.id];
+                                                            return copy;
+                                                        });
+                                                        updateCartItemPrice(item.id, 'unit');
+                                                    }}
+                                                    className={`px-1.5 py-0.5 rounded text-[7.5px] font-black uppercase transition cursor-pointer ${
+                                                        (!item.price_type || item.price_type === 'unit')
+                                                            ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                                    }`}
+                                                >
+                                                    Detalle
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setLocalPriceInputs(prev => {
+                                                            const copy = { ...prev };
+                                                            delete copy[item.id];
+                                                            return copy;
+                                                        });
+                                                        updateCartItemPrice(item.id, 'bulk');
+                                                    }}
+                                                    className={`px-1.5 py-0.5 rounded text-[7.5px] font-black uppercase transition cursor-pointer ${
+                                                        item.price_type === 'bulk'
+                                                            ? 'bg-amber-500 text-white shadow-xs font-extrabold'
+                                                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                                    }`}
+                                                >
+                                                    X Mayor
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {/* Column B: Quantity Adjuster & Row Subtotal */}

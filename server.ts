@@ -2932,7 +2932,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       let params: any[] = [];
       
       if (startDate && endDate) {
-        conditions.push(` date(s.created_at) >= date(?) AND date(s.created_at) <= date(?) `);
+        conditions.push(` substr(s.created_at, 1, 10) >= date(?) AND substr(s.created_at, 1, 10) <= date(?) `);
         params.push(startDate, endDate);
       }
       
@@ -3242,15 +3242,26 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           const inventoryAuditLogIds: any[] = [];
 
           for (const item of items) {
-            const safeQty = Math.max(1, Number(item.quantity || 1));
+            const safeQty = Number(item.quantity);
+            if (isNaN(safeQty) || safeQty <= 0) throw new Error('Cantidad de producto inválida');
             const safePrice = Math.max(0, Number(item.price || 0));
             
-            // Fetch product's current cost in USD at moment of sale
+            // Fetch product's current cost & stock in USD at moment of sale
             const prodRow = db.prepare('SELECT name, sku, price_cost, stock FROM products WHERE id = ?').get(item.product_id) as any;
-            const currentCost = prodRow ? (prodRow.price_cost || 0) : 0;
-            const pName = prodRow ? prodRow.name : 'Producto Desconocido';
-            const pSku = prodRow ? prodRow.sku : '';
-            const beforeStock = prodRow ? prodRow.stock : 0;
+            if (!prodRow) {
+              throw new Error(`El producto con ID ${item.product_id} no existe en el inventario.`);
+            }
+            if (prodRow.stock <= 0) {
+              throw new Error(`Venta rechazada: El producto "${prodRow.name}" no tiene stock disponible (Stock: 0).`);
+            }
+            if (safeQty > prodRow.stock) {
+              throw new Error(`Venta rechazada: Stock insuficiente para "${prodRow.name}". Disponible: ${prodRow.stock} unidades, Solicitado: ${safeQty}.`);
+            }
+
+            const currentCost = prodRow.price_cost || 0;
+            const pName = prodRow.name;
+            const pSku = prodRow.sku || '';
+            const beforeStock = prodRow.stock;
             
             const subtotalMinor = safeQty * safePrice;
 
@@ -3668,7 +3679,8 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         `);
         
         for (const item of items) {
-          const safeQty = Math.max(1, Number(item.quantity || 1));
+          const safeQty = Number(item.quantity);
+            if (isNaN(safeQty) || safeQty <= 0) throw new Error('Cantidad de producto inválida');
           const safePrice = Math.max(0, Number(item.price || 0));
           insertItem.run(pendingSaleId, item.product_id, safeQty, safePrice);
         }
@@ -3710,7 +3722,8 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
           VALUES (?, ?, ?, ?)
         `);
         for (const item of items) {
-          const safeQty = Math.max(1, Number(item.quantity || 1));
+          const safeQty = Number(item.quantity);
+            if (isNaN(safeQty) || safeQty <= 0) throw new Error('Cantidad de producto inválida');
           const safePrice = Math.max(0, Number(item.price || 0));
           insertItem.run(id, item.product_id, safeQty, safePrice);
         }
@@ -3827,10 +3840,20 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         
         for (const item of items) {
           const prodRow = db.prepare('SELECT name, sku, price_cost, stock FROM products WHERE id = ?').get(item.product_id) as any;
-          const currentCost = prodRow ? (prodRow.price_cost || 0) : 0;
-          const pName = prodRow ? prodRow.name : 'Producto Desconocido';
-          const pSku = prodRow ? prodRow.sku : '';
-          const beforeStock = prodRow ? prodRow.stock : 0;
+          if (!prodRow) {
+            throw new Error(`El producto con ID ${item.product_id} no existe en el inventario.`);
+          }
+          if (prodRow.stock <= 0) {
+            throw new Error(`Venta rechazada: El producto "${prodRow.name}" no tiene stock disponible (Stock: 0).`);
+          }
+          if (item.quantity > prodRow.stock) {
+            throw new Error(`Venta rechazada: Stock insuficiente para "${prodRow.name}". Disponible: ${prodRow.stock} unidades, Solicitado: ${item.quantity}.`);
+          }
+
+          const currentCost = prodRow.price_cost || 0;
+          const pName = prodRow.name;
+          const pSku = prodRow.sku || '';
+          const beforeStock = prodRow.stock;
           
           const subtotalMinor = item.quantity * item.price;
 
@@ -4152,17 +4175,17 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
     try {
       const { startDate, endDate } = req.query;
       
-      let dateFilter = "date(s.created_at) >= date('now', '-7 days')";
+      let dateFilter = "substr(s.created_at, 1, 10) >= substr(date('now', '-7 days', 'localtime'), 1, 10)";
       if (startDate && endDate) {
-        dateFilter = `date(s.created_at) >= '${startDate}' AND date(s.created_at) <= '${endDate}'`;
+        dateFilter = `substr(s.created_at, 1, 10) >= '${startDate}' AND substr(s.created_at, 1, 10) <= '${endDate}'`;
       }
       
       const sales = db.prepare(`
-        SELECT date(created_at) as date, SUM(total) as total 
+        SELECT substr(created_at, 1, 10) as date, SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END) as total 
         FROM sales 
-        WHERE date(created_at) >= date('now', '-7 days')
-        GROUP BY date(created_at)
-        ORDER BY date(created_at) ASC
+        WHERE substr(created_at, 1, 10) >= substr(date('now', '-7 days', 'localtime'), 1, 10)
+        GROUP BY substr(created_at, 1, 10)
+        ORDER BY substr(created_at, 1, 10) ASC
       `).all();
       
       const topProducts = db.prepare(`
@@ -4252,11 +4275,11 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       };
 
       const todayStr = getBoliviaISOString().substring(0, 10);
-      const todaySales = db.prepare("SELECT COALESCE(SUM(total), 0) as total FROM sales WHERE substr(created_at, 1, 10) = ?").get(todayStr) as any;
+      const todaySales = db.prepare("SELECT COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total FROM sales WHERE substr(created_at, 1, 10) = ?").get(todayStr) as any;
       const lowStock = db.prepare("SELECT * FROM products WHERE stock <= stock_alarm").all();
       
       const todayProfit = db.prepare(`
-        SELECT COALESCE(SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))), 0) as profit
+        SELECT COALESCE(SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)), 0) as profit
         FROM sale_items si
         JOIN sales s ON s.id = si.sale_id
         JOIN products p ON p.id = si.product_id
@@ -4268,7 +4291,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       
       const periodSalesRow = db.prepare(`
         SELECT 
-          COALESCE(SUM(s.total), 0) as total_sales,
+          COALESCE(SUM(CASE WHEN s.currency='USD' THEN s.total * s.exchange_rate ELSE s.total END), 0) as total_sales,
           COUNT(DISTINCT s.id) as total_tx
         FROM sales s
         ${currentWhere.whereSql}
@@ -4276,7 +4299,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
 
       const periodProfitRow = db.prepare(`
         SELECT 
-          COALESCE(SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))), 0) as total_profit,
+          COALESCE(SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)), 0) as total_profit,
           COALESCE(SUM(si.quantity), 0) as total_items
         FROM sale_items si
         JOIN sales s ON s.id = si.sale_id
@@ -4318,14 +4341,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         const prevWhere = buildSalesWhere(startDatePrev, endDatePrev, 's');
         const prevSalesRow = db.prepare(`
           SELECT 
-            COALESCE(SUM(s.total), 0) as total_sales,
+            COALESCE(SUM(CASE WHEN s.currency='USD' THEN s.total * s.exchange_rate ELSE s.total END), 0) as total_sales,
             COUNT(DISTINCT s.id) as total_tx
           FROM sales s
           ${prevWhere.whereSql}
         `).get(...prevWhere.params) as any;
 
         const prevProfitRow = db.prepare(`
-          SELECT COALESCE(SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))), 0) as total_profit
+          SELECT COALESCE(SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)), 0) as total_profit
           FROM sale_items si
           JOIN sales s ON s.id = si.sale_id
           JOIN products p ON p.id = si.product_id
@@ -4345,7 +4368,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       let topProducts;
       topProducts = db.prepare(`
         SELECT p.id, p.name, p.sku, SUM(si.quantity) as total_qty, SUM(si.quantity * si.price) as total_revenue,
-               SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as total_profit
+               SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)) as total_profit
         FROM sale_items si 
         JOIN products p ON p.id = si.product_id 
         JOIN sales s ON s.id = si.sale_id
@@ -4392,14 +4415,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               CAST(t.total AS REAL) as total,
               CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
             FROM (
-              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
+              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total
               FROM sales
               ${currWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
               SELECT substr(s.created_at, 1, 10) as label,
-                     SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
+                     SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)) as profit
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
               JOIN products p ON p.id = si.product_id
@@ -4417,14 +4440,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               CAST(t.total AS REAL) as total,
               CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
             FROM (
-              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
+              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total
               FROM sales
               ${prevWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
               SELECT substr(s.created_at, 1, 10) as label,
-                     SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
+                     SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)) as profit
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
               JOIN products p ON p.id = si.product_id
@@ -4463,14 +4486,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
               CAST(t.total AS REAL) as total,
               CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
             FROM (
-              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
+              SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total
               FROM sales
               ${currWhereSales.whereSql}
               GROUP BY label
             ) t
             LEFT JOIN (
               SELECT substr(s.created_at, 1, 10) as label,
-                     SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
+                     SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)) as profit
               FROM sale_items si
               JOIN sales s ON s.id = si.sale_id
               JOIN products p ON p.id = si.product_id
@@ -4489,14 +4512,14 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
             CAST(t.total AS REAL) as total,
             CAST(COALESCE(p_info.profit, 0) AS REAL) as profit
           FROM (
-            SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(total), 0) as total
+            SELECT substr(created_at, 1, 10) as label, COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total
             FROM sales
             ${currWhereSales.whereSql}
             GROUP BY label
           ) t
           LEFT JOIN (
             SELECT substr(s.created_at, 1, 10) as label,
-                   SUM(si.quantity * (si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate))) as profit
+                   SUM(si.quantity * (CASE WHEN s.currency='USD' THEN (si.price - COALESCE(si.cost, p.price_cost, 0)) * s.exchange_rate ELSE si.price - (COALESCE(si.cost, p.price_cost, 0) * s.exchange_rate) END)) as profit
             FROM sale_items si
             JOIN sales s ON s.id = si.sale_id
             JOIN products p ON p.id = si.product_id
@@ -4511,7 +4534,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       // Payment distribution
       const paymentWhere = buildSalesWhere(startDate, endDate, 'sales');
       const paymentDistribution = db.prepare(`
-        SELECT payment_method as name, COALESCE(SUM(total), 0) as value, COUNT(id) as count
+        SELECT payment_method as name, COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as value, COUNT(id) as count
         FROM sales 
         ${paymentWhere.whereSql}
         GROUP BY payment_method
@@ -4520,7 +4543,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       // Full 24-hour hourly distribution with sales amount and transaction count
       const hourlyWhere = buildSalesWhere(startDate, endDate, 's');
       const rawHourly = db.prepare(`
-        SELECT strftime('%H', s.created_at) as hour, SUM(s.total) as total, COUNT(s.id) as tx_count
+        SELECT substr(s.created_at, 12, 2) as hour, SUM(CASE WHEN s.currency='USD' THEN s.total * s.exchange_rate ELSE s.total END) as total, COUNT(s.id) as tx_count
         FROM sales s
         ${hourlyWhere.whereSql}
         GROUP BY hour
@@ -4584,7 +4607,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
   app.post("/api/shifts/reset", (req, res) => {
     const { closed_by } = req.body;
     try {
-      const todaySales = db.prepare("SELECT COALESCE(SUM(total), 0) as total FROM sales WHERE date(created_at) = date('now')").get() as any;
+      const todaySales = db.prepare("SELECT COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total FROM sales WHERE substr(created_at, 1, 10) = substr(date('now', 'localtime'), 1, 10)").get() as any;
       const totalAmount = todaySales.total;
 
       db.transaction(() => {
@@ -4593,7 +4616,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
         // Clear sales of today (or mark them as closed so they don't count towards current shift)
         // For simple pos, we can delete them or keep them, let's keep them but since user wants a button to put to 0, 
         // we delete daily sales or we virtualize shift. To be safe & robust, we delete current sales to set daily sales to 0.
-        db.prepare("DELETE FROM sales WHERE date(created_at) = date('now')").run();
+        db.prepare("DELETE FROM sales WHERE substr(created_at, 1, 10) = substr(date('now', 'localtime'), 1, 10)").run();
       })();
 
       syncAfterWrite(["shifts", "sales"]);
@@ -6402,10 +6425,10 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
                   });
                 } else if (fc.name === "getDashboardKPIs") {
                   try {
-                    const todaySales = db.prepare("SELECT COALESCE(SUM(total), 0) as total, COUNT(*) as count FROM sales WHERE date(created_at) = date('now')").get() as any;
-                    const weekSales = db.prepare("SELECT COALESCE(SUM(total), 0) as total, COUNT(*) as count FROM sales WHERE date(created_at) >= date('now', '-7 days')").get() as any;
-                    const monthSales = db.prepare("SELECT COALESCE(SUM(total), 0) as total, COUNT(*) as count FROM sales WHERE date(created_at) >= date('now', '-30 days')").get() as any;
-                    const yearSales = db.prepare("SELECT COALESCE(SUM(total), 0) as total, COUNT(*) as count FROM sales WHERE date(created_at) >= date('now', '-365 days')").get() as any;
+                    const todaySales = db.prepare("SELECT COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total, COUNT(*) as count FROM sales WHERE substr(created_at, 1, 10) = substr(date('now', 'localtime'), 1, 10)").get() as any;
+                    const weekSales = db.prepare("SELECT COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total, COUNT(*) as count FROM sales WHERE substr(created_at, 1, 10) >= substr(date('now', '-7 days', 'localtime'), 1, 10)").get() as any;
+                    const monthSales = db.prepare("SELECT COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total, COUNT(*) as count FROM sales WHERE substr(created_at, 1, 10) >= substr(date('now', '-30 days', 'localtime'), 1, 10)").get() as any;
+                    const yearSales = db.prepare("SELECT COALESCE(SUM(CASE WHEN currency='USD' THEN total * exchange_rate ELSE total END), 0) as total, COUNT(*) as count FROM sales WHERE substr(created_at, 1, 10) >= substr(date('now', '-365 days', 'localtime'), 1, 10)").get() as any;
                     const lowStock = db.prepare("SELECT name, stock FROM products WHERE stock <= stock_alarm").all();
                     const topProducts = db.prepare(`
                       SELECT p.name, SUM(si.quantity) as total_qty 
