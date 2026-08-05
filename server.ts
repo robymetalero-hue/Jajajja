@@ -4242,7 +4242,7 @@ Debes responder estrictamente en formato JSON sin preámbulos, markdown duplicad
       const doCompare = compare === 'true';
 
       // 1. Fetch seller accounts list for filter
-      const sellers = db.prepare("SELECT id, username, name, role FROM users").all();
+      const sellers = db.prepare("SELECT id, username, role FROM users").all();
 
       // Helper for dynamic WHERE conditions on sales 's' table
       const buildSalesWhere = (start?: string, end?: string, prefix = 's') => {

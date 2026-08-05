@@ -75,7 +75,10 @@ export class ErrorBoundary extends Component<Props, State> {
             <button
               id="error-retry-action"
               onClick={() => {
-                localStorage.removeItem('user'); // Reset stale user sessions if corrupt
+                // If it's a specific auth error, maybe log out. Otherwise, just reload.
+                if (errMessage.includes("Firebase") && errMessage.includes("auth")) {
+                   localStorage.removeItem('user');
+                }
                 window.location.reload();
               }}
               className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-indigo-650 hover:bg-indigo-700 text-white text-sm font-bold shadow-lg shadow-indigo-650/15 transition-all cursor-pointer"

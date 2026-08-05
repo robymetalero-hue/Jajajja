@@ -7,32 +7,49 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { startAutoBackupScheduler } from "./utils/driveBackupScheduler";
 import PhysicalCountManager from './components/PhysicalCountManager';
 import AudioVoice from './components/AudioVoice';
-import { 
-    Menu, X, Home, ShoppingCart, Clock, Receipt, PackageSearch, 
+import { Menu, X, Home, ShoppingCart, Clock, Receipt, PackageSearch, 
     Folder, ClipboardCheck, Undo2, LayoutDashboard, TrendingUp, 
     Users, Smartphone, LogOut, Sun, Moon, Sparkles, ArrowLeftRight, User, Settings, Landmark, Activity, History, Loader2, Store, Cpu
 } from 'lucide-react';
 
+const lazyWithRetries = (componentImport: () => Promise<any>) =>
+  React.lazy(async () => {
+    const pageHasAlreadyBeenForceRefreshed = JSON.parse(
+      window.sessionStorage.getItem('page-has-been-force-refreshed') || 'false'
+    );
+    try {
+      const component = await componentImport();
+      window.sessionStorage.setItem('page-has-been-force-refreshed', 'false');
+      return component;
+    } catch (error) {
+      if (!pageHasAlreadyBeenForceRefreshed) {
+        window.sessionStorage.setItem('page-has-been-force-refreshed', 'true');
+        window.location.reload();
+      }
+      throw error;
+    }
+  });
+
 // Code Splitting with React.lazy
-const POS = React.lazy(() => import('./views/POS'));
-const LoginScreen = React.lazy(() => import('./views/LoginScreen'));
-const Dashboard = React.lazy(() => import('./views/Dashboard'));
-const Inventory = React.lazy(() => import('./views/Inventory'));
-const PermissionsConsole = React.lazy(() => import('./views/PermissionsConsole'));
-const ConfiguracionesView = React.lazy(() => import('./views/ConfiguracionesView'));
-const CajasView = React.lazy(() => import('./views/CajasView'));
-const CuentasPorCobrarView = React.lazy(() => import('./views/CuentasPorCobrarView'));
-const DiagnosticoView = React.lazy(() => import('./views/DiagnosticoView'));
-const AuditoriaView = React.lazy(() => import('./views/AuditoriaView'));
-const HardwareConfigView = React.lazy(() => import('./views/HardwareConfigView'));
+const POS = lazyWithRetries(() => import('./views/POS'));
+const LoginScreen = lazyWithRetries(() => import('./views/LoginScreen'));
+const Dashboard = lazyWithRetries(() => import('./views/Dashboard'));
+const Inventory = lazyWithRetries(() => import('./views/Inventory'));
+const PermissionsConsole = lazyWithRetries(() => import('./views/PermissionsConsole'));
+const ConfiguracionesView = lazyWithRetries(() => import('./views/ConfiguracionesView'));
+const CajasView = lazyWithRetries(() => import('./views/CajasView'));
+const CuentasPorCobrarView = lazyWithRetries(() => import('./views/CuentasPorCobrarView'));
+const DiagnosticoView = lazyWithRetries(() => import('./views/DiagnosticoView'));
+const AuditoriaView = lazyWithRetries(() => import('./views/AuditoriaView'));
+const HardwareConfigView = lazyWithRetries(() => import('./views/HardwareConfigView'));
 
 // Named exports from ExtraViews loaded dynamically
-const InicioView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.InicioView })));
-const HistorialVentasView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.HistorialVentasView })));
-const VentasPendientesView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.VentasPendientesView })));
-const DepartamentosView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.DepartamentosView })));
-const DevolucionesView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.DevolucionesView })));
-const AnalisisView = React.lazy(() => import('./views/ExtraViews').then(m => ({ default: m.AnalisisView })));
+const InicioView = lazyWithRetries(() => import('./views/ExtraViews').then(m => ({ default: m.InicioView })));
+const HistorialVentasView = lazyWithRetries(() => import('./views/ExtraViews').then(m => ({ default: m.HistorialVentasView })));
+const VentasPendientesView = lazyWithRetries(() => import('./views/ExtraViews').then(m => ({ default: m.VentasPendientesView })));
+const DepartamentosView = lazyWithRetries(() => import('./views/ExtraViews').then(m => ({ default: m.DepartamentosView })));
+const DevolucionesView = lazyWithRetries(() => import('./views/ExtraViews').then(m => ({ default: m.DevolucionesView })));
+const AnalisisView = lazyWithRetries(() => import('./views/ExtraViews').then(m => ({ default: m.AnalisisView })));
 
 // Elegant and professional loader fallback for dynamic components
 const LoadingViewFallback = () => (

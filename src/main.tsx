@@ -153,6 +153,28 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
+window.addEventListener('unhandledrejection', async (event) => {
+  if (event.reason && event.reason.message && event.reason.message.includes('Failed to fetch dynamically imported module')) {
+    event.preventDefault();
+    console.warn("Chunk load error detected. Unregistering service workers and clearing caches...");
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        await registration.unregister();
+      }
+      if (window.caches) {
+        const keys = await window.caches.keys();
+        for (const key of keys) {
+          await window.caches.delete(key);
+        }
+      }
+      window.location.reload();
+    } catch (e) {
+      window.location.reload();
+    }
+  }
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
