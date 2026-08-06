@@ -6,7 +6,7 @@ import {
     Receipt, Trash2, Printer, Search, RefreshCw, Folder, Sparkles, 
     ArrowLeftRight, FileBarChart, PieChart, TrendingUp, AlertCircle, 
     Check, Undo2, Smartphone, HelpCircle, Activity, ChevronRight, Ban,
-    Plus, PlusCircle, Eye, MessageCircle, X, Share2
+    Plus, PlusCircle, Eye, MessageCircle, X, Share2, PackageSearch, History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -23,126 +23,216 @@ import {
 export function InicioView() {
     const { setView, products, user } = useAppContext();
     const [currentTime, setCurrentTime] = useState(new Date());
+    const [stats, setStats] = useState({ salesToday: 0, txToday: 0, profitToday: 0 });
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
     }, []);
 
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const today = new Date();
+                const yyyy = today.getFullYear();
+                const mm = String(today.getMonth() + 1).padStart(2, '0');
+                const dd = String(today.getDate()).padStart(2, '0');
+                const dateStr = `${yyyy}-${mm}-${dd}`;
+                
+                const token = localStorage.getItem('token') || '';
+                const res = await fetch(`/api/dashboard?startDate=${dateStr}&endDate=${dateStr}&compare=false`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    setStats({
+                        salesToday: data.salesToday || data.periodSummary?.totalSales || 0,
+                        txToday: data.periodSummary?.totalTx || 0,
+                        profitToday: data.profitToday || data.periodSummary?.totalProfit || 0
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to fetch today stats", e);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchStats();
+    }, []);
+
     const lowStockCount = products.filter(p => p.stock <= p.stock_alarm).length;
     const totalItemsInStock = products.reduce((acc, p) => acc + p.stock, 0);
 
+    const formatCurrency = (val: number) => new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(val);
+
     return (
-        <div className="p-5 md:p-8 overflow-y-auto h-full flex flex-col gap-6 select-none bg-neutral-50/50 dark:bg-[#070a10]">
-            {/* Ambient header greet */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-tr from-blue-700 via-indigo-600 to-violet-700 p-6 md:p-8 text-white shadow-xl">
-                <div className="absolute right-0 top-0 translate-x-12 -translate-y-8 w-64 h-64 bg-white/10 rounded-full blur-2xl"></div>
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="flex flex-col gap-2">
-                        <span className="bg-white/20 text-white border border-white/10 text-[9px] uppercase font-bold px-3 py-1 rounded-full w-max tracking-widest">
-                            Software Conectado • v2.0
+        <div className="p-5 md:p-8 overflow-y-auto h-full flex flex-col gap-6 select-none bg-slate-50/50 dark:bg-[#070a10]">
+            {/* Elegant Header */}
+            <div className="relative overflow-hidden rounded-3xl bg-slate-900 dark:bg-slate-950 p-6 md:p-10 text-white shadow-2xl border border-slate-800">
+                <div className="absolute top-0 right-0 p-12 opacity-20 pointer-events-none mix-blend-screen">
+                    <Sparkles size={120} className="text-indigo-400" />
+                </div>
+                <div className="absolute right-0 top-0 translate-x-20 -translate-y-20 w-96 h-96 bg-indigo-600/30 rounded-full blur-[80px]"></div>
+                
+                <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div className="flex flex-col gap-3">
+                        <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[9px] uppercase font-black px-3 py-1 rounded-full w-max tracking-widest flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+                            Sistema Activo • GTR POS
                         </span>
-                        <h1 className="text-2xl md:text-3xl font-black tracking-tight">
-                            ¡Bienvenido de vuelta, {user?.username}!
+                        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-white">
+                            Hola, {user?.username}
                         </h1>
-                        <p className="text-white/80 text-xs font-medium max-w-lg mt-1 heading-normal">
-                            Terminal GTR POS lista. Controla el flujo de caja, el catálogo de almacén y las ventas fiscales con asistencia de Inteligencia Artificial activa.
+                        <p className="text-slate-400 text-sm font-medium max-w-lg mt-1 heading-normal">
+                            Bienvenido a tu centro de control. Gestiona ventas, inventario y reportes financieros desde un solo lugar.
                         </p>
                     </div>
 
                     {/* Clock & Date Badge */}
-                    <div className="bg-black/20 backdrop-blur-md rounded-2xl p-4 min-w-[200px] border border-white/5 flex flex-col items-center justify-center">
-                        <div className="flex items-center gap-2 text-xs font-bold text-white/70 uppercase tracking-widest">
-                            <Clock size={12} className="text-blue-300" />
+                    <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-4 min-w-[220px] border border-white/10 flex flex-col items-end justify-center">
+                        <div className="flex items-center gap-2 text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">
+                            <Clock size={12} />
                             <span>Hora Local</span>
                         </div>
-                        <span className="text-2xl font-black font-mono tracking-tight mt-1 text-white">
-                            {currentTime.toLocaleTimeString()}
+                        <span className="text-3xl font-black font-mono tracking-tighter text-white">
+                            {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </span>
-                        <span className="text-[10px] font-bold text-white/50 mt-1">
-                            {currentTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        <span className="text-xs font-bold text-slate-400 mt-1 capitalize">
+                            {currentTime.toLocaleDateString('es-BO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </span>
                     </div>
                 </div>
             </div>
 
-            {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <div className="bg-white dark:bg-[#0c111e] p-5 rounded-3xl border border-slate-205/60 dark:border-slate-850 flex items-center justify-between shadow-sm">
-                    <div>
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Ítems Totales</span>
-                        <span className="text-xl font-black font-mono text-slate-850 dark:text-gray-100 mt-1 block">{totalItemsInStock} unidades</span>
+            {/* Quick KPI Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div className="bg-white dark:bg-[#0c111e] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-850 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start">
+                        <div className="p-3 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl">
+                            <TrendingUp size={22} />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hoy</span>
                     </div>
-                    <div className="w-10 h-10 bg-indigo-500/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center border border-indigo-500/5">
-                        <Folder size={18} />
+                    <div>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Ventas del Día</span>
+                        <div className="flex items-end gap-2 mt-1">
+                            <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                                {loading ? '...' : formatCurrency(stats.salesToday)}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-[#0c111e] p-5 rounded-3xl border border-slate-205/60 dark:border-slate-850 flex items-center justify-between shadow-sm">
-                    <div>
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Alertas Almacén</span>
-                        <span className={`text-xl font-black font-mono mt-1 block ${lowStockCount > 0 ? "text-rose-500" : "text-slate-500"}`}>{lowStockCount} alertas</span>
+                <div className="bg-white dark:bg-[#0c111e] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-850 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start">
+                        <div className="p-3 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl">
+                            <Receipt size={22} />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hoy</span>
                     </div>
-                    <div className="w-10 h-10 bg-rose-500/10 dark:bg-rose-400/10 text-rose-500 dark:text-rose-400 rounded-2xl flex items-center justify-center border border-rose-500/5">
-                        <AlertCircle size={18} />
+                    <div>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Transacciones</span>
+                        <div className="flex items-end gap-2 mt-1">
+                            <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                                {loading ? '...' : stats.txToday}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-[#0c111e] p-5 rounded-3xl border border-slate-205/60 dark:border-slate-850 flex items-center justify-between shadow-sm">
-                    <div>
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Operario Activo</span>
-                        <span className="text-xl font-black font-sans uppercase tracking-wide text-blue-600 dark:text-blue-400 mt-1 block">@{user?.username}</span>
+                <div className="bg-white dark:bg-[#0c111e] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-850 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start">
+                        <div className="p-3 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-2xl">
+                            <Folder size={22} />
+                        </div>
                     </div>
-                    <div className="w-10 h-10 bg-blue-500/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center border border-blue-500/5">
-                        <ShieldCheck size={18} />
+                    <div>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Inventario Total</span>
+                        <div className="flex items-end gap-2 mt-1">
+                            <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                                {totalItemsInStock}
+                            </span>
+                            <span className="text-xs font-bold text-slate-400 mb-1 ml-1">unidades</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-[#0c111e] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-850 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start">
+                        <div className="p-3 bg-orange-500/10 text-orange-600 dark:text-orange-400 rounded-2xl">
+                            <AlertCircle size={22} />
+                        </div>
+                        {lowStockCount > 0 && (
+                            <span className="flex h-2.5 w-2.5 relative">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
+                            </span>
+                        )}
+                    </div>
+                    <div>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Alertas de Stock</span>
+                        <div className="flex items-end gap-2 mt-1">
+                            <span className={`text-2xl font-black tracking-tight ${lowStockCount > 0 ? "text-orange-600 dark:text-orange-500" : "text-slate-900 dark:text-white"}`}>
+                                {lowStockCount}
+                            </span>
+                            <span className="text-xs font-bold text-slate-400 mb-1 ml-1">productos</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Access Buttons Bento */}
-            <div className="flex flex-col gap-4">
-                <h3 className="text-xs font-black uppercase text-slate-405 tracking-wider mt-2">Atajos de Punto de Venta</h3>
+            {/* Quick Actions Bento Grid */}
+            <div className="flex flex-col gap-4 mt-2">
+                <div className="flex items-center gap-2">
+                    <Sparkles size={16} className="text-indigo-500" />
+                    <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white tracking-wider">Atajos Rápidos</h3>
+                </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                     {/* POS register */}
                     <div 
                         onClick={() => setView('pos')}
-                        className="group bg-white dark:bg-[#0c111e] hover:border-blue-500/40 p-5 rounded-3xl border border-slate-200/60 dark:border-slate-850 flex flex-col justify-between h-44 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-[1.01]"
+                        className="group relative overflow-hidden bg-white dark:bg-[#0c111e] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-850 flex flex-col justify-between h-48 cursor-pointer hover:shadow-xl hover:shadow-blue-500/5 transition-all duration-300 hover:-translate-y-1"
                     >
-                        <div className="w-10 h-10 bg-blue-500/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center">
-                            <ShoppingCart size={18} />
+                        <div className="absolute -right-6 -top-6 w-32 h-32 bg-blue-500/5 rounded-full group-hover:bg-blue-500/10 transition-colors blur-2xl"></div>
+                        <div className="w-12 h-12 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center relative z-10 group-hover:scale-110 transition-transform">
+                            <ShoppingCart size={24} />
                         </div>
-                        <div>
-                            <h4 className="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-tight group-hover:text-blue-600 transition-colors">Registro POS</h4>
-                            <p className="text-[10px] text-slate-400 mt-1 leading-normal font-semibold">Emitir nuevas comandas, usar el lector de código de barras y CRM de clientes.</p>
+                        <div className="relative z-10">
+                            <h4 className="font-black text-lg text-slate-900 dark:text-white tracking-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Registro POS</h4>
+                            <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Abre la terminal de punto de venta, escanea códigos y registra transacciones.</p>
                         </div>
                     </div>
 
                     {/* Stock listing */}
                     <div 
                         onClick={() => setView('productos')}
-                        className="group bg-white dark:bg-[#0c111e] hover:border-violet-500/40 p-5 rounded-3xl border border-slate-200/60 dark:border-slate-850 flex flex-col justify-between h-44 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-[1.01]"
+                        className="group relative overflow-hidden bg-white dark:bg-[#0c111e] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-850 flex flex-col justify-between h-48 cursor-pointer hover:shadow-xl hover:shadow-violet-500/5 transition-all duration-300 hover:-translate-y-1"
                     >
-                        <div className="w-10 h-10 bg-violet-500/10 dark:bg-violet-400/10 text-violet-600 dark:text-violet-400 rounded-2xl flex items-center justify-center">
-                            <Folder size={18} />
+                        <div className="absolute -right-6 -top-6 w-32 h-32 bg-violet-500/5 rounded-full group-hover:bg-violet-500/10 transition-colors blur-2xl"></div>
+                        <div className="w-12 h-12 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-2xl flex items-center justify-center relative z-10 group-hover:scale-110 transition-transform">
+                            <Folder size={24} />
                         </div>
-                        <div>
-                            <h4 className="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-tight group-hover:text-violet-600 transition-colors">Catálogo de Almacén</h4>
-                            <p className="text-[10px] text-slate-400 mt-1 leading-normal font-semibold">Supervisar existencias de productos, dar de alta artículos y editar SKU alarmas.</p>
+                        <div className="relative z-10">
+                            <h4 className="font-black text-lg text-slate-900 dark:text-white tracking-tight group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">Catálogo de Almacén</h4>
+                            <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Administra tu inventario, ajusta precios, y gestiona códigos de barra.</p>
                         </div>
                     </div>
 
                     {/* Historical sales log */}
                     <div 
                         onClick={() => setView('historial_ventas')}
-                        className="group bg-white dark:bg-[#0c111e] hover:border-emerald-500/40 p-5 rounded-3xl border border-slate-200/60 dark:border-slate-850 flex flex-col justify-between h-44 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-[1.01]"
+                        className="group relative overflow-hidden bg-white dark:bg-[#0c111e] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-850 flex flex-col justify-between h-48 cursor-pointer hover:shadow-xl hover:shadow-emerald-500/5 transition-all duration-300 hover:-translate-y-1"
                     >
-                        <div className="w-10 h-10 bg-emerald-500/10 dark:bg-emerald-400/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center">
-                            <Receipt size={18} />
+                        <div className="absolute -right-6 -top-6 w-32 h-32 bg-emerald-500/5 rounded-full group-hover:bg-emerald-500/10 transition-colors blur-2xl"></div>
+                        <div className="w-12 h-12 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center relative z-10 group-hover:scale-110 transition-transform">
+                            <Receipt size={24} />
                         </div>
-                        <div>
-                            <h4 className="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-tight group-hover:text-emerald-600 transition-colors">Historial de Turno</h4>
-                            <p className="text-[10px] text-slate-400 mt-1 leading-normal font-semibold">Consultar transacciones previas, re-imprimir recibos y procesar anulaciones.</p>
+                        <div className="relative z-10">
+                            <h4 className="font-black text-lg text-slate-900 dark:text-white tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">Historial de Ventas</h4>
+                            <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">Revisa transacciones anteriores, imprime comprobantes y realiza anulaciones.</p>
                         </div>
                     </div>
                 </div>
